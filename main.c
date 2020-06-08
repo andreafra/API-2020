@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_INPUT 1024 + 1
+#define MAX_INPUT 1024
 
 // Prototypes
 void parseCmd();
@@ -24,8 +24,7 @@ void redo();
 // Data structures
 typedef enum command_type_ {
     CHANGE,
-    DELETE,
-    PRINT
+    DELETE
 } CmdType;
 
 // A list element representing a row of text
@@ -50,7 +49,7 @@ typedef struct cmd_ {
 char inputStr[MAX_INPUT];
 
 // 1 = parse Commands, 0 = handle text
-int isCmd = 1;
+int isCmdMode = 1;
 
 // Parameters of a command
 int addr1, addr2, times;
@@ -67,9 +66,10 @@ int totalLines = 1;
 
 // the queues to perform undo/redo
 Cmd *undoStack = NULL;
-Cmd *redoStack = NULL;
 
 // List: Lines of text
+
+// Create a new Line
 Line *createLine(char *text) {
     Line *newLine = malloc(sizeof(Line));
     char *newText = malloc(sizeof(char) * MAX_INPUT);
@@ -84,6 +84,7 @@ Line *createLine(char *text) {
     exit(12);
 }
 
+// Replace the text of a Line
 void updateLine(Line *curr, Line *prev, char *text) {
     Line *newLine;
     // Create a new list
@@ -114,6 +115,7 @@ void updateLine(Line *curr, Line *prev, char *text) {
     currLine = curr->next;
 }
 
+// Delete a Line and link the previous Line with the next one
 void deleteLine(Line *prev, Line *line) {
     // delete a line only if it exists
     if (line) {
@@ -137,6 +139,12 @@ void deleteLine(Line *prev, Line *line) {
     }
 }
 
+// Insert a Line between prev and prev->next
+void insertLine(Line *prev, Line *line) {
+
+}
+
+// Print a Line text. Print '.' if the line is null.
 void printLine(Line *line) {
     if (line)
         printf("%s", line->text);
@@ -146,11 +154,21 @@ void printLine(Line *line) {
 
 // Stack: undo/redo
 
+Cmd* push(Cmd* stack, CmdType type, int addr1, int addr2, Line *backup) {
+
+}
+
+Cmd* pop(Cmd* stack) {
+
+};
+
 // Entrypoint
 int main() {
     do {
-        fgets(inputStr, MAX_INPUT, stdin);
-        parseCmd();
+        if (isCmdMode)
+            parseCmd();
+        else
+            change();
     } while (1);
 
     return 0;
@@ -158,6 +176,8 @@ int main() {
 
 void parseCmd() {
     // I need to parse the command
+    // Read stdin
+    fgets(inputStr, MAX_INPUT, stdin);
 
     // Get the lenght of the input
     size_t len = strlen(inputStr) - 1;
@@ -169,17 +189,17 @@ void parseCmd() {
     switch (cmd) {
         case 'c': // Change
             parseDoubleCmd();
-            isCmd = 0;
-            change();
+            isCmdMode = 0;
+//            change();
             break;
         case 'd': // Delete
             parseDoubleCmd();
-            isCmd = 1;
+            isCmdMode = 1;
             delete();
             break;
         case 'p': // Print
             parseDoubleCmd();
-            isCmd = 1;
+            isCmdMode = 1;
             print();
             break;
         case 'u': // Undo
@@ -192,7 +212,6 @@ void parseCmd() {
             break;
         case 'q':
             exit(0);
-            return;
         default:
             break;
     }
@@ -230,6 +249,7 @@ void change() {
         }
         // Eat the final '.'
         fgets(inputStr, MAX_INPUT, stdin);
+        isCmdMode = 1;
     }
 }
 
@@ -253,18 +273,22 @@ void delete() {
 void print() {
     // Start from the beginning
     currLine = buffer;
-
+    for ( ; addr1 < (addr2 < 1 ? addr2+1 : 1); addr1++) {
+        printf(".\n");
+    }
     // Move to addr1 line
     for (currLineIndex = 1; currLineIndex < addr1; currLineIndex++) {
         currLine = currLine->next;
     }
     // Print each line till addr2 line
-    for (int i = addr1; i <= addr2; i += 1) {
-        if (currLine != NULL) {
-            printLine(currLine);
-            currLine = currLine->next;
-        } else {
-            printf(".\n");
+    if (addr1 >= 1) {
+        for (int i = addr1; i <= addr2; i += 1) {
+            if (currLine != NULL) {
+                printLine(currLine);
+                currLine = currLine->next;
+            } else {
+                printf(".\n");
+            }
         }
     }
 }
