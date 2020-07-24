@@ -42,6 +42,7 @@ typedef struct cmd_ {
     int addr2;
     struct cmd_ *prev;
     struct cmd_ *next;
+    Line *backup;
 } Cmd;
 
 // Global Variables
@@ -70,6 +71,7 @@ Cmd *undoStack = NULL;
 // List: Lines of text
 
 // Create a new Line
+// Returns a pointer to the new line
 Line *createLine(char *text) {
     Line *newLine = malloc(sizeof(Line));
     char *newText = malloc(sizeof(char) * MAX_INPUT);
@@ -85,32 +87,39 @@ Line *createLine(char *text) {
 }
 
 // Replace the text of a Line
+// It can:
+// 1. Create a new buffer
+// 2. Append a line to the buffer
+// 3. Replace a line in the buffer
 void updateLine(Line *curr, Line *prev, char *text) {
     Line *newLine;
-    // Create a new list
+    // 1. Create a new list
     if (prev == NULL && curr == NULL) {
         newLine = createLine(text);
         buffer = newLine;
+        // GLOBAL: Update line count
         totalLines = 1;
-        // Update prev line
+        // GLOBAL: Update prev line
         prevLine = newLine;
         currLine = NULL;
         return;
     }
-    // Append an element to the list
+    // 2. Append an element to the list
     if (prev != NULL && curr == NULL) {
         newLine = createLine(text);
         prev->next = newLine;
+        // GLOBAL: Update line count
         totalLines += 1;
-        // Update prev line
+        // GLOBAL: Update prev line
         prevLine = newLine;
         currLine = NULL;
         return;
     }
-    // else...
-    // Replace an element in the list
+    // ELSE:
+    // 3. Replace an element in the list
+    // (overwrite the already allocated string)
     strcpy(curr->text, inputStr);
-    // Update prev line
+    // GLOBAL: Update prev line and this line pointer
     prevLine = curr;
     currLine = curr->next;
 }
@@ -140,8 +149,20 @@ void deleteLine(Line *prev, Line *line) {
 }
 
 // Insert a Line between prev and prev->next
-void insertLine(Line *prev, Line *line) {
-
+void insertLine(Line *prev, Line *next, char *text) {
+    Line *newLine = createLine(text);
+    if (prev)
+        prev->next = newLine;
+    else
+        buffer = newLine;
+    // Update refs
+    newLine->next = next;
+    // GLOBAL: Update line count
+    totalLines += 1;
+    // GLOBAL: Update prev line
+    prevLine = newLine;
+    currLine = NULL;
+    return;
 }
 
 // Print a Line text. Print '.' if the line is null.
@@ -154,11 +175,13 @@ void printLine(Line *line) {
 
 // Stack: undo/redo
 
-Cmd* push(Cmd* stack, CmdType type, int addr1, int addr2, Line *backup) {
+// Append a command to the undo queue, saving the parameters.
+// Line *backup is a new list, containing all the rows passed as parameters to that command.
+Cmd* pushCmd(Cmd* stack, CmdType type, int addr1, int addr2, Line *backup) {
 
 }
 
-Cmd* pop(Cmd* stack) {
+Cmd* popCmd(Cmd* stack) {
 
 };
 
@@ -190,7 +213,7 @@ void parseCmd() {
         case 'c': // Change
             parseDoubleCmd();
             isCmdMode = 0;
-//            change();
+            // change();
             break;
         case 'd': // Delete
             parseDoubleCmd();
@@ -251,6 +274,8 @@ void change() {
         fgets(inputStr, MAX_INPUT, stdin);
         isCmdMode = 1;
     }
+
+    // Save command into queue
 }
 
 void delete() {

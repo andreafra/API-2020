@@ -1,0 +1,4 @@
+# Ignore compiled program
+main.o
+# Ignore test output
+test_output
