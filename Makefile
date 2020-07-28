@@ -45,7 +45,7 @@ test: clean main
 	
 	@echo "[rollercoaster 1]"
 	cat tests/rollercoaster/Rollercoaster_1_input.txt | ./main.o > ./test_output
-	diff ./tests/rollercoaster/Rollercoaster_1_output.txt./test_output
+	diff ./tests/rollercoaster/Rollercoaster_1_output.txt ./test_output
 	@echo "[rollercoaster 2]"
 	cat tests/rollercoaster/Rollercoaster_2_input.txt | ./main.o > ./test_output
-	diff ./tests/rollercoaster/Rollercoaster_2_output.txt./test_output
+	diff ./tests/rollercoaster/Rollercoaster_2_output.txt ./test_output

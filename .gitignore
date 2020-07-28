@@ -2,3 +2,5 @@
 main.o
 # Ignore test output
 test_output
+# Ignore .vscode
+.vscode/
