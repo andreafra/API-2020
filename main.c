@@ -21,6 +21,8 @@ void undo();
 
 void redo();
 
+void performUR(int);
+
 // Data structures
 typedef enum command_type_ {
     CHANGE,
@@ -42,7 +44,8 @@ typedef struct cmd_ {
     int addr2;
     struct cmd_ *prev;
     struct cmd_ *next;
-    Line *backup;
+    Line *newText;
+    Line *oldText;
 } Cmd;
 
 // Global Variables
@@ -51,6 +54,11 @@ char inputStr[MAX_INPUT];
 
 // 1 = parse Commands, 0 = handle text
 int isCmdMode = 1;
+
+// Negative is Undo, Positive is Redo
+int numberOfUR = 0;
+// Bool, true if last command was either Undo or Redo
+int lastCmdWasUR = 0;
 
 // Parameters of a command
 int addr1, addr2, times;
@@ -65,8 +73,12 @@ int currLineIndex = 1;
 int totalLines = 1;
 
 
-// the queues to perform undo/redo
+// the stacks to perform undo/redo
 Cmd *undoStack = NULL;
+Cmd *undoStackTop = NULL;
+
+Cmd *redoStack = NULL;
+Cmd *redoStackTop = NULL;
 
 // List: Lines of text
 
@@ -175,15 +187,97 @@ void printLine(Line *line) {
 
 // Stack: undo/redo
 
-// Append a command to the undo queue, saving the parameters.
-// Line *backup is a new list, containing all the rows passed as parameters to that command.
-Cmd* pushCmd(Cmd* stack, CmdType type, int addr1, int addr2, Line *backup) {
-
+// Create a new Command
+// Returns a pointer to the new command
+Cmd *createCmd(CmdType type, int addr1, int addr2, Line *newText, Line *oldText) {
+    Cmd *newCmd = malloc(sizeof(Cmd));
+    if (newCmd) {
+        newCmd->type = type;
+        newCmd->prev = NULL;
+        newCmd->next = NULL;
+        newCmd->addr1 = addr1;
+        newCmd->addr2 = addr2;
+        newCmd->newText = newText;
+        newCmd->oldText = oldText;
+        return newCmd;
+    }
+    // Print error
+    printf("ERROR: Can't allocate a new Cmd!");
+    exit(12);
 }
 
-Cmd* popCmd(Cmd* stack) {
+void freeCmd(Cmd *cmd) {
+    if (cmd) {
+        while (cmd->oldText) {
+            Line *next = cmd->oldText->next;
+            free(cmd->oldText->text);
+            cmd->oldText = next;
+        }
+        while (cmd->newText) {
+            Line *next = cmd->newText->next;
+            free(cmd->newText->text);
+            cmd->newText = next;
+        }
+        free(cmd);
+    }
+}
 
-};
+Cmd *popUndo() {
+    if (undoStackTop == NULL) {
+        return NULL;
+    } else {
+        Cmd *poppedItem = undoStackTop;
+        if (undoStackTop->prev == NULL)
+            undoStack = NULL;
+        undoStackTop = undoStackTop->prev;
+
+        return poppedItem;
+    }
+}
+
+void *pushUndo(Cmd *cmd) {
+    if (undoStack == NULL) {
+        undoStack = cmd;
+    } else {
+        undoStackTop->next = cmd;
+        cmd->prev = undoStackTop;
+    }
+    undoStackTop = cmd;
+}
+
+Cmd *popRedo() {
+    if (redoStackTop == NULL) {
+        return NULL;
+    } else {
+        Cmd *poppedItem = redoStackTop;
+        if (redoStackTop->prev == NULL)
+            undoStack = NULL;
+        redoStackTop = redoStackTop->prev;
+
+        return redoStackTop;
+    }
+}
+
+void *pushRedo(Cmd *cmd) {
+    if (redoStack == NULL) {
+        redoStack = cmd;
+    } else {
+        redoStackTop->next = cmd;
+        cmd->prev = redoStackTop;
+    }
+    redoStackTop = cmd;
+}
+
+void cleanRedo() {
+    while(redoStack) {
+        Cmd *next = redoStack->next;
+        freeCmd(redoStack);
+        redoStack = next;
+    }
+    
+    redoStack = NULL;
+    redoStackTop = NULL;
+}
 
 // Entrypoint
 int main() {
@@ -213,24 +307,28 @@ void parseCmd() {
         case 'c': // Change
             parseDoubleCmd();
             isCmdMode = 0;
-            // change();
+            performUR(1);
             break;
         case 'd': // Delete
             parseDoubleCmd();
             isCmdMode = 1;
+            performUR(1);
             delete();
             break;
         case 'p': // Print
             parseDoubleCmd();
             isCmdMode = 1;
+            performUR(0);
             print();
             break;
         case 'u': // Undo
             parseSingleCmd();
+            lastCmdWasUR = 1;
             undo();
             break;
         case 'r': // Redo
             parseSingleCmd();
+            lastCmdWasUR = 1;
             redo();
             break;
         case 'q':
@@ -253,11 +351,15 @@ void parseDoubleCmd() {
     addr2 = strtol(token2, NULL, 10);
 }
 
+// It is not possible to change lines that don't exist, unless it's the first one
+// after the end of the current buffer.
 void change() {
     if (addr1 > 0 && addr1 <= totalLines + 1) {
+        // TODO: Create new command
+
         // Start from the beginning (line 1)
-        currLine = buffer;
         prevLine = NULL;
+        currLine = buffer;
         // Move to addr1 line
         for (currLineIndex = 1; currLineIndex < addr1; currLineIndex++) {
             prevLine = currLine;
@@ -268,17 +370,22 @@ void change() {
             // save input text in inputStr
             fgets(inputStr, MAX_INPUT, stdin);
             // updateLine also updates prevLine and currLine
+            // TODO: backup this line!
+
             updateLine(currLine, prevLine, inputStr);
         }
         // Eat the final '.'
         fgets(inputStr, MAX_INPUT, stdin);
+        // Reset to command mode
         isCmdMode = 1;
-    }
 
-    // Save command into queue
+        // TODO: Save command
+    }
 }
 
+// It is possible to delete lines that don't exist.
 void delete() {
+    // TODO: Create new command
     if (addr1 > 0 && addr1 <= totalLines + 1) {
         // Start from the beginning (line 1)
         currLine = buffer;
@@ -290,9 +397,12 @@ void delete() {
         }
         // Delete each line till addr2 line
         for (int i = addr1; i <= addr2; i += 1) {
+            // TODO: backup this line!
+
             deleteLine(prevLine, currLine);
         }
     }
+    // TODO: Save command
 }
 
 void print() {
@@ -319,9 +429,29 @@ void print() {
 }
 
 void undo() {
-
+    numberOfUR -= times;
 }
 
 void redo() {
+    numberOfUR += times;
+}
 
+// This function is called whenever a non-undo, non-redo command is called,
+// therefore applying all pending undo/redo. This allows us to condensate changes,
+// and only apply them once.
+void performUR(int allowRedoWipe) {
+    if (numberOfUR > 0) {
+        // REDO
+
+    } else if (numberOfUR < 0) {
+        // UNDO
+
+    }
+
+    if (allowRedoWipe) {
+        cleanRedo();
+    }
+    // else do nothing since the number of redos matches the number of undos.
+    // Reset
+    numberOfUR = 0;
 }
