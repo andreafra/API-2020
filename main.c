@@ -103,6 +103,7 @@ Line *createLine(char *text) {
 // 1. Create a new buffer
 // 2. Append a line to the buffer
 // 3. Replace a line in the buffer
+// At the end, it moves the line pointer forward by one position.
 void updateLine(Line *curr, Line *prev, char *text) {
     Line *newLine;
     // 1. Create a new list
@@ -206,6 +207,35 @@ Cmd *createCmd(CmdType type, int addr1, int addr2, Line *newText, Line *oldText)
     exit(12);
 }
 
+// Append text in reverse:
+// a, b, c --> c, b, a
+void appendOldTextToCmd(Cmd *cmd, char *text) {
+    if (text) {
+        Line *newLine = createLine(text);
+        if(cmd->oldText == NULL) {
+            cmd->oldText = newLine;
+        } else {
+            newLine->next = cmd->oldText;
+            cmd->oldText = newLine;
+        }
+    }
+}
+
+// Append in reverse:
+// a, b, c --> c, b, a
+void appendNewTextToCmd(Cmd *cmd, char *text) {
+    if (text) {
+        Line *newLine = createLine(text);
+        if(cmd->newText == NULL) {
+            cmd->newText = newLine;
+        } else {
+            newLine->next = cmd->newText;
+            cmd->newText = newLine;
+        }
+    }
+}
+
+// Free a Cmd and all of its lists
 void freeCmd(Cmd *cmd) {
     if (cmd) {
         while (cmd->oldText) {
@@ -355,7 +385,8 @@ void parseDoubleCmd() {
 // after the end of the current buffer.
 void change() {
     if (addr1 > 0 && addr1 <= totalLines + 1) {
-        // TODO: Create new command
+        // Create new command
+        Cmd *newCmd = createCmd(CHANGE, addr1, addr2, NULL, NULL);
 
         // Start from the beginning (line 1)
         prevLine = NULL;
@@ -370,8 +401,12 @@ void change() {
             // save input text in inputStr
             fgets(inputStr, MAX_INPUT, stdin);
             // updateLine also updates prevLine and currLine
-            // TODO: backup this line!
+            // backup this line!
+            if (currLine) 
+                appendOldTextToCmd(newCmd, currLine->text);
+            appendNewTextToCmd(newCmd, inputStr);
 
+            // Update and move forward
             updateLine(currLine, prevLine, inputStr);
         }
         // Eat the final '.'
@@ -379,7 +414,8 @@ void change() {
         // Reset to command mode
         isCmdMode = 1;
 
-        // TODO: Save command
+        // Save command
+        pushUndo(newCmd);
     }
 }
 
