@@ -476,14 +476,25 @@ void redo() {
 // therefore applying all pending undo/redo. This allows us to condensate changes,
 // and only apply them once.
 void performUR(int allowRedoWipe) {
+    printf("[%d]\n", numberOfUR);
     if (numberOfUR > 0) {
         // REDO
 
-    } else if (numberOfUR < 0) {
-        // UNDO
-
     }
-
+    if (numberOfUR < 0) {
+        // UNDO n times
+        for (int i = 0; i < -numberOfUR; i++) {
+            // get last undo
+            Cmd *lastCmd = popUndo();
+            if (lastCmd) {
+                if (lastCmd->type == CHANGE) {
+                    // TODO: change / delete lines
+                } else if (lastCmd->type == DELETE) {
+                    // TODO: insert lines
+                }
+            }
+        }
+    }
     if (allowRedoWipe) {
         cleanRedo();
     }

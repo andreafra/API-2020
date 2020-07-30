@@ -1,6 +1,11 @@
+.PHONY: clean all
+
 CC = gcc
 CFLAGS = -O2 -g -ggdb
-main:
+
+all: clean main.o
+
+main.o: main.c
 	${CC} main.c -o main.o ${CFLAGS}
 
 clean:
