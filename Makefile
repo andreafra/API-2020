@@ -11,7 +11,7 @@ main.o: main.c
 clean:
 	rm -v main.o
 
-test: clean main
+test: clean main.o
 	@echo "Running tests..."
 	@echo "[writeonly 1]"
 	cat tests/writeonly/Write_Only_1_input.txt | ./main.o > ./test_output
