@@ -178,14 +178,6 @@ void insertLine(Line *prev, Line *next, char *text) {
     return;
 }
 
-// Print a Line text. Print '.' if the line is null.
-void printLine(Line *line) {
-    if (line)
-        printf("%s", line->text);
-    else
-        printf(".");
-}
-
 // Stack: undo/redo
 
 // Create a new Command
@@ -400,14 +392,16 @@ void change() {
         for (int i = addr1; i <= addr2; i += 1) {
             // save input text in inputStr
             fgets(inputStr, MAX_INPUT, stdin);
+            // filter out the '\n' at the end
+            char *inputStrNoNewLine = strtok(inputStr, "\n");
             // updateLine also updates prevLine and currLine
             // backup this line!
             if (currLine) 
                 appendOldTextToCmd(newCmd, currLine->text);
-            appendNewTextToCmd(newCmd, inputStr);
+            appendNewTextToCmd(newCmd, inputStrNoNewLine);
 
             // Update and move forward
-            updateLine(currLine, prevLine, inputStr);
+            updateLine(currLine, prevLine, inputStrNoNewLine);
         }
         // Eat the final '.'
         fgets(inputStr, MAX_INPUT, stdin);
@@ -421,7 +415,10 @@ void change() {
 
 // It is possible to delete lines that don't exist.
 void delete() {
-    // TODO: Create new command
+    // Create new command
+    Cmd *newCmd = createCmd(DELETE, addr1, addr2, NULL, NULL);
+
+
     if (addr1 > 0 && addr1 <= totalLines + 1) {
         // Start from the beginning (line 1)
         currLine = buffer;
@@ -433,12 +430,15 @@ void delete() {
         }
         // Delete each line till addr2 line
         for (int i = addr1; i <= addr2; i += 1) {
-            // TODO: backup this line!
-
+            // backup this line!
+            if (currLine) 
+                appendOldTextToCmd(newCmd, currLine->text);
+            
             deleteLine(prevLine, currLine);
         }
     }
-    // TODO: Save command
+    // Save command
+    pushUndo(newCmd);
 }
 
 void print() {
@@ -455,7 +455,7 @@ void print() {
     if (addr1 >= 1) {
         for (int i = addr1; i <= addr2; i += 1) {
             if (currLine != NULL) {
-                printLine(currLine);
+                printf("%s\n", currLine->text);                
                 currLine = currLine->next;
             } else {
                 printf(".\n");
@@ -472,11 +472,32 @@ void redo() {
     numberOfUR += times;
 }
 
+void printCmd(Cmd *cmd) {
+    printf("| Type: %s\n", cmd->type == CHANGE ? "CHANGE" : "DELETE");
+    printf("| Addr1: %d\n", cmd->addr1);
+    printf("| Addr2: %d\n", cmd->addr2);
+    printf("| OldText: ");
+    Line* line = cmd->oldText;
+    while (line) {
+        printf("%s ", line->text);
+        line = line->next;
+    }
+    printf("\n");
+    printf("| NewText: ");
+    line = cmd->newText;
+    while (line) {
+        printf("%s ", line->text);
+        line = line->next;
+    }
+    printf("\n");
+}
+
 // This function is called whenever a non-undo, non-redo command is called,
 // therefore applying all pending undo/redo. This allows us to condensate changes,
 // and only apply them once.
 void performUR(int allowRedoWipe) {
-    printf("[%d]\n", numberOfUR);
+    // DEBUG: DeltaUR
+    // printf("[%d]\n", numberOfUR);
     if (numberOfUR > 0) {
         // REDO
 
@@ -487,8 +508,12 @@ void performUR(int allowRedoWipe) {
             // get last undo
             Cmd *lastCmd = popUndo();
             if (lastCmd) {
+                // DEBUG: Cmd
+                printCmd(lastCmd);
+
                 if (lastCmd->type == CHANGE) {
                     // TODO: change / delete lines
+
                 } else if (lastCmd->type == DELETE) {
                     // TODO: insert lines
                 }
@@ -502,3 +527,5 @@ void performUR(int allowRedoWipe) {
     // Reset
     numberOfUR = 0;
 }
+
+ 
