@@ -532,10 +532,10 @@ void performUR(int allowRedoWipe) {
 			Cmd *lastCmd = popUndo();
 			if (lastCmd) {
 				// DEBUG: Cmd
-				printCmd(lastCmd);
+				// printCmd(lastCmd);
 				
 				if (lastCmd->type == CHANGE) {
-					// TODO: change / delete lines
+					// change / delete lines
 					/*
 						1. Get at the oldtest item of oldText and get size of oldText
 						2. (Addr2-Addr1+1) - #oldText = num of lines to delete
@@ -544,20 +544,24 @@ void performUR(int allowRedoWipe) {
 					*/
 					int numOfOldLines = countLines(lastCmd->oldText);
 					int linesToDelete = (lastCmd->addr2 - lastCmd->addr1 + 1) - numOfOldLines;
-					printf(":: #oldText: %d | #newText: %d | #linesToDelete: %d ::\n", countLines(lastCmd->oldText), countLines(lastCmd->newText), linesToDelete);
+					
 					// Get to addr1
 					currLine = buffer;
 					prevLine = NULL;
 					// Move to addr1 line
-					for (currLineIndex = 1; currLineIndex < addr1; currLineIndex++) {
+					for (currLineIndex = 1; currLineIndex < lastCmd->addr1; currLineIndex++) {
 						prevLine = currLine;
 						currLine = currLine->next;
 					}
 					// Change each line till addr2 line
 					Line *oldLine = lastCmd->oldText;
 					while(oldLine) {
-						// TODO: Ad-hoc reimplement
-						updateLine(currLine, prevLine, oldLine->text);
+						// Ad-hoc reimplement
+						strcpy(currLine->text, oldLine->text);
+						// Go to next line
+						prevLine = currLine;
+						currLine = currLine->next;
+						// updateLine(currLine, prevLine, oldLine->text);
 						oldLine = oldLine->next;
 					}
 					// Delete all remaining lines
@@ -567,11 +571,38 @@ void performUR(int allowRedoWipe) {
 					}
 
 				} else if (lastCmd->type == DELETE) {
-					// TODO: insert lines
+					// insert lines
 					/*
 						1. Get at the oldtest item of oldText and get size of oldText
 						2. Insert Lines from Addr1 to Addr2 and hopefully empty oldText
 					*/
+					// Get to addr1
+					currLine = buffer;
+					prevLine = NULL;
+					// Move to addr1 line
+					for (currLineIndex = 1; currLineIndex < lastCmd->addr1; currLineIndex++) {
+						prevLine = currLine;
+						currLine = currLine->next;
+					}
+					// Change each line till addr2 line
+					Line *oldLine = lastCmd->oldText;
+					while(oldLine) {
+						// Ad-hoc insert?
+						Line *newLine = createLine(oldLine->text);
+						if (currLineIndex == 1) {
+							newLine->next = buffer;
+							buffer = newLine;
+						} else {
+							Line *next = prevLine->next;
+							prevLine->next = newLine;
+							newLine->next = next;
+						}
+						// Go to next line
+						prevLine = newLine;
+						currLine = newLine->next;
+
+						oldLine = oldLine->next;
+					}
 				}
 			}
 		}
