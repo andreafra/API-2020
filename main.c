@@ -294,10 +294,10 @@ Cmd *popRedo() {
 	} else {
 		Cmd *poppedItem = redoStackTop;
 		if (redoStackTop->prev == NULL)
-			undoStack = NULL;
+			redoStack = NULL;
 		redoStackTop = redoStackTop->prev;
 
-		return redoStackTop;
+		return poppedItem;
 	}
 }
 
@@ -521,9 +521,69 @@ void printCmd(Cmd *cmd) {
 void performUR(int allowRedoWipe) {
 	// DEBUG: DeltaUR
 	// printf("[%d]\n", numberOfUR);
-	if (numberOfUR > 0) {
-		// REDO
 
+	if (allowRedoWipe) {
+		cleanRedo();
+	}
+
+	if (numberOfUR > 0) {
+		// REDO n times
+		for (int i = 0; i < numberOfUR; i++) {
+			// get last redo
+			Cmd *lastCmd = popRedo();
+			if (lastCmd) {
+				// DEBUG: Cmd
+				// printCmd(lastCmd);
+				
+				if (lastCmd->type == CHANGE) {
+					// update lines
+					// Get to addr1
+					currLine = buffer;
+					prevLine = NULL;
+					// Move to addr1 line
+					for (currLineIndex = 1; currLineIndex < lastCmd->addr1; currLineIndex++) {
+						prevLine = currLine;
+						currLine = currLine->next;
+					}
+					// Change each line till addr2 line
+					Line *newLine = lastCmd->newText;
+					while(newLine) {
+						// Re-implement updateLine:
+						if (currLine) {
+							strcpy(currLine->text, newLine->text);
+						} else {
+							currLine = createLine(newLine->text);
+							if (prevLine)
+								prevLine->next = currLine;
+							else
+								buffer = currLine;
+							
+							totalLines += 1;
+						}
+						// updateLine(currLine, prevLine, newLine->text);
+						prevLine = currLine;
+						currLine = currLine->next;
+
+						newLine = newLine->next;
+					}
+				} else if (lastCmd->type == DELETE) {
+					// delete lines
+					// Get to addr1
+					currLine = buffer;
+					prevLine = NULL;
+					// Move to addr1 line
+					for (currLineIndex = 1; currLineIndex < lastCmd->addr1; currLineIndex++) {
+						prevLine = currLine;
+						currLine = currLine->next;
+					}
+					// delete each line till addr2 line
+					for (int i = lastCmd->addr1; i <= lastCmd->addr2; i += 1) {
+						deleteLine(prevLine, currLine);
+					}
+				}
+				pushUndo(lastCmd);
+			}
+		}
 	}
 	if (numberOfUR < 0) {
 		// UNDO n times
@@ -597,18 +657,18 @@ void performUR(int allowRedoWipe) {
 							prevLine->next = newLine;
 							newLine->next = next;
 						}
-						// Go to next line
+						// Go to next line (GLOBAL)
+						currLineIndex += 1;
 						prevLine = newLine;
 						currLine = newLine->next;
+						totalLines += 1;
 
 						oldLine = oldLine->next;
 					}
 				}
+				pushRedo(lastCmd);
 			}
 		}
-	}
-	if (allowRedoWipe) {
-		cleanRedo();
 	}
 	// else do nothing since the number of redos matches the number of undos.
 	// Reset
