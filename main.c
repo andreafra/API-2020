@@ -68,10 +68,33 @@ int main() {
 
 void parseInput() {
 	fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
-	int inputLen = strnlen(INPUT_STRING, MAX_INPUT_SIZE);
-	char cmd = INPUT_STRING[inputLen-1];
-
-	assert( cmd == 'c' || cmd == 'd' || cmd == 'p' || cmd == 'u' || cmd == 'r');
-	
-	char* param1 = strtok(INPUT_STRING, ",");
+	char cmd = INPUT_STRING[strlen(INPUT_STRING) - 2];
+	INPUT_STRING[strlen(INPUT_STRING) - 2] = '\0';
+	if (cmd == 'u' || cmd == 'r') {
+		int times = atoi(INPUT_STRING);
+		assert(times >= 0);
+		printf(">%d%c\n", times, cmd);
+		if (cmd == 'u') {
+			undo(times);
+		} else {
+			redo(times);
+		}
+	} else if (cmd =='c' || cmd == 'd' || cmd == 'p') {
+		char *token1 = strtok(INPUT_STRING, ",");
+		char *token2 = strtok(NULL, ",");
+		assert(token1 != NULL);
+		assert(token2 != NULL);
+		int addr1 = atoi(token1);
+		int addr2 = atoi(token2);
+		assert(addr1 >= 0);
+		assert(addr2 >= 0);
+		printf(">%d,%d%c\n", addr1, addr2, cmd);
+		if (cmd == 'c') {
+			change(addr1, addr2);
+		} else if (cmd == 'd') {
+			delete(addr1, addr2);
+		} else {
+			print(addr1, addr2);
+		}
+	} else SHOULD_QUIT = true;
 }

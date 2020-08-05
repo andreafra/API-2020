@@ -1,6 +1,9 @@
 # Ignore compiled program
-./main.o
+main.o
 # Ignore test output
 test_output
 # Ignore .vscode
 .vscode/
+.idea/
+cmake-build-debug/
+main.o.dSYM/

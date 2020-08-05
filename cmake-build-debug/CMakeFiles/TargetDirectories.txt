@@ -1,0 +1,3 @@
+/Users/andrea/Projects/api_2020/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/Users/andrea/Projects/api_2020/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/andrea/Projects/api_2020/cmake-build-debug/CMakeFiles/api_2020.dir
