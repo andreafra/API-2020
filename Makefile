@@ -6,7 +6,7 @@ CFLAGS = -O2 -g -ggdb
 all: main.o
 
 main.o: main.c
-	${CC} main.c -o main.o ${CFLAGS}
+	${CC} main.c -o main.o -fsanitize=address ${CFLAGS}
 
 clean:
 	rm -v main.o
