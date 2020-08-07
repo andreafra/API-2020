@@ -8,7 +8,6 @@
 
 #define MAX_INPUT_SIZE 1024
 
-
 typedef enum _CmdType { CHANGE, DELETE } CmdType;
 
 typedef struct _Line {
@@ -45,6 +44,70 @@ char INPUT_STRING[MAX_INPUT_SIZE];
 // Read from stdin and handle commands.
 void parseInput();
 
+// Undo/Redo stack operations
+void stack_push(Cmd **stack, int *size, Cmd *item) {
+	if (*stack == NULL) {
+		*stack = item;
+	} else {
+		item->next = *stack;
+		*stack = item;
+	}
+	*size += 1;
+}
+
+Cmd *stack_pop(Cmd **stack, int *size) {
+	if (*stack == NULL) return NULL;
+	Cmd *top = *stack;
+	*stack = top->next;
+	*size -= 1;
+	return top;
+}
+
+// DEBUG
+void debug_printCmd(Cmd *cmd) {
+	if (cmd == NULL) {
+		printf("| <NULL>\n");
+		return;
+	}
+	printf("+---------\n");
+	printf("| Type: %s\n", cmd->type == CHANGE ? "CHANGE" : "DELETE");
+	printf("| Addr1: %d\n", cmd->addr1);
+	printf("| Addr2: %d\n", cmd->addr2);
+	printf("| Old: ");
+	Line* line = cmd->old;
+	while (line) {
+		printf("%s ", line->text);
+		line = line->next;
+	}
+	printf("\n");
+	printf("| New: ");
+	line = cmd->new;
+	while (line) {
+		printf("%s ", line->text);
+		line = line->next;
+	}
+	printf("\n+---------\n");
+}
+
+void debug_printList(Line *l) {
+	Line *tmp = l;
+	while(tmp) {
+		printf("%s-", tmp->text);
+		tmp = tmp->next;
+	}
+	printf("\n");
+}
+
+int debug_countList(Line *l) {
+	Line *tmp = l;
+	int i = 0;
+	while(tmp) {
+		i++;
+		tmp = tmp->next;
+	}
+	return i;
+}
+
 // Commands from input
 
 void change(int addr1, int addr2);
@@ -53,13 +116,8 @@ void print(int addr1, int addr2);
 void undo(int times);
 void redo(int times);
 
-// External buffer data structure commands
-void updateLines();
-void deleteLines();
-void insertLines();
-void printLines();
-
 int main() {
+	//setbuf(stdin, NULL);
 	while(!SHOULD_QUIT) {
 		// Each iteration is a command
 		parseInput();		
@@ -87,35 +145,107 @@ Line *newLine(char *text) {
 	return allocatedLine;
 }
 
-// COMMANDS
+// Create a new Command
 Cmd *newCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
 	Cmd *allocatedCmd = malloc(sizeof(Cmd));
 	assert(allocatedCmd != NULL);
 	allocatedCmd->type = type;
 	allocatedCmd->addr1 = addr1;
 	allocatedCmd->addr2 = addr2;
-	allocatedCmd->old = NULL;
-	allocatedCmd->new = NULL;
+	allocatedCmd->old = old;
+	allocatedCmd->new = new;
 	allocatedCmd->next = NULL;
 	return allocatedCmd;
+}
+
+// Get the last item in a List of Lines
+Line *getLastLine(Line *list) {
+	Line *curr = list;
+	while(curr->next) {
+		curr = curr->next;
+	}
+	return curr;
 }
 
 // DATA STRUCTURE
 // A collection of functions that update the buffer
 
-void insertLines() {
+Line *goToLine(int number) {
+	if (number < 1) return NULL;
+	Line *curr = BUFFER;
+	for (int i = 1; i < number && curr; i++) {
+		curr = curr->next;
+	}
+	return curr;
+}
 
-};
-void updateLines() {
+// Append the passed list at the prev item.
+// Example: If you add lines at 3, you append them at 2, and the old 3
+// will be appended at the last item of the list.
+void insertLines(Line *prev, Line *list) {
+	Line *tmp;
+	if (prev == NULL) {
+		tmp = BUFFER;
+		BUFFER = list;
+		getLastLine(list)->next = tmp;
+	} else {
+		tmp = prev->next;
+		prev->next = list;
+		getLastLine(list)->next = tmp;
+	}
+}
 
-};
-void deleteLines() {
+void updateLines(Line *prev) {
 
-};
-void printLines() {
+}
 
-};
+// Returns the deleted lines as a list with the last item linked to NULL;
+Line *deleteLines(Line *prev, Line *curr, int quantity) {
+	if (prev == NULL && curr == NULL) return NULL;
 
+
+	Line *tmp = curr;
+	Line *next = NULL;
+	for (int i = 0; i < quantity; i++) {
+		if (tmp == NULL) {
+			// If the list ends too soon it means that
+			// we're at the end of the buffer, nothing
+			// more to delete.
+			break;
+		} else if (i == quantity - 1) {
+			// We're at the last item
+			// we're unlinking it from the next.
+			next = tmp->next;
+			tmp->next = NULL;
+			break;
+		} else {
+			// Go next
+			tmp = tmp->next;
+		}
+	}
+	if (prev == NULL && curr != NULL) {
+		// We're editing the first line
+		// [BUFFER] ->> NEXT
+		BUFFER = next;
+	} else {
+		// PREV ->> NEXT
+		prev->next = next;
+	}
+
+	return curr;
+}
+
+void printLines(Line *line, int quantity) {
+	Line *tmp = line;
+	for (int i = 0; i < quantity; i++) {
+		if (tmp == NULL) {
+			printf(".\n");
+		} else {
+			printf("%s\n", tmp->text);
+			tmp = tmp->next;
+		}
+	}
+}
 
 // CODE
 
@@ -151,70 +281,87 @@ void parseInput() {
 	} else SHOULD_QUIT = true;
 }
 
-void change(int addr1, int addr2) {
-	printf("> Change from %d to %d.\n", addr1, addr2);
-	Line *newLineHead = NULL;
-	Line *newLineCurr = NULL;
-	for (int i = 0; i < (addr2 - addr1 + 1); i++) {
+Line *getInputLines(int quantity, Line **lastItem) {
+
+	Line *list = NULL;
+	*lastItem = NULL;
+
+	for (int i = 0; i < quantity; i++) {
 		// Get the new text line from stdin
 		fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
 		// Remove \n from the string
 		char *input = strtok(INPUT_STRING, "\n");
 		assert(input != NULL);
 		// Save the string in a Line
-		Line *line = newLine(newText(input));
-		if (newLineHead == NULL) {
-			newLineHead = line;
-			newLineCurr = line;
+		Line *nLine = newLine(newText(input));
+
+		if (list == NULL) {
+			list = nLine;
+			*lastItem = nLine;
 		} else {
-			newLineCurr->next = line;
-			newLineCurr = newLineCurr->next;
+			(*lastItem)->next = nLine;
+			*lastItem = nLine;
 		}
 	}
-	if (newLineCurr != )
-	// Move to addr1
-	Line *currLine = BUFFER;
-	for(int i = 1; i < addr1; i++) {
-		currLine = currLine->next;
-	}
-	int lineIndex = 0;
-	Line *oldLineHead = currLine;
-	Line *oldLineCurr = currLine;
-	while(currLine && lineIndex < (addr2-addr1+1)) {
-		Line *line = newLine(oldLineCurr->text);
-		if (oldLineHead == NULL) {
-			oldLineHead = line;
-			oldLineCurr = line;
-		} else {
-			oldLineCurr->next = line;
-			oldLineCurr = oldLineCurr->next;
-		}
-		currLine = oldLineCurr->next;
-		lineIndex++;
+	// Chomp the '.'
+	fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
 
-	}
+	return list;
+}
 
-	Cmd *cmd = newCmd(CHANGE, addr1, addr2, oldLineHead, newLineHead);
+void change(int addr1, int addr2) {
+	// Get the new lines
+	Line *lastNewLine = NULL;
+	Line *newLines = getInputLines(addr2 - addr1 + 1, &lastNewLine);
+
+	// REMOVE the old lines
+	Line *prev = goToLine(addr1 - 1);
+	Line *curr = prev ? prev->next : goToLine(addr1);
+	Line *oldLines = deleteLines(prev, curr, addr2 - addr1 + 1);
+
+	assert(debug_countList(newLines) >= debug_countList(oldLines));
+
+	// Add Command to undo stack
+	Cmd *cmd = newCmd(CHANGE, addr1, addr2, oldLines, newLines);
+	stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
+
+	// Substitute the old lines with the new ones
+	insertLines(prev, newLines);
 }
 
 void delete(int addr1, int addr2) {
-	printf("> Delete from %d to %d.\n", addr1, addr2);
+	if (addr1 == 0 && addr2 == 0) {
+		Cmd *cmd = newCmd(DELETE, addr1, addr2, NULL, NULL);
+		stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
+		return;
+	}
 
+	// REMOVE the old lines
+	Line *prev = goToLine(addr1 - 1);
+	Line *curr = prev ? prev->next : goToLine(addr1);
+	Line *oldLines = deleteLines(prev, curr, addr2 - addr1 + 1);
+
+	// Add Command to undo stack
+	Cmd *cmd = newCmd(DELETE, addr1, addr2, oldLines, NULL);
+	stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
 
 void print(int addr1, int addr2) {
-	printf("> Print from %d to %d.\n", addr1, addr2);
+	if (addr1 == 0 && addr2 == 0) {
+		printf(".\n");
+		return;
+	}
+	printLines(goToLine(addr1), addr2-addr1+1);
 }
 
 void undo(int times) {
-	printf("> Undo %d times.\n", times);
+	debug_printCmd(stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE));
 	// FIRST OPTIMIZE AND CHECK FOR BOUNDS.
 	/* Get the top cmd from UNDO_STACK and "undo" its action.
 	 * Then, move it to the REDO_STACK. */
 }
 
 void redo(int times) {
-	printf("> Redo %d times.\n", times);
 	/* Get the top cmd from REDO_STACK and "redo" its action.
 	 * Then, move it to the UNDO_STACK. */
 }
