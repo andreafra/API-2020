@@ -8,24 +8,21 @@
 
 #define MAX_INPUT_SIZE 1024
 
-typedef enum _CmdType { CHANGE, DELETE } CmdType;
+typedef enum CmdType_ { CHANGE, DELETE } CmdType;
 
-typedef struct _Line {
+typedef struct Line_ {
 	char *text;
-	struct _Line *next;
+	struct Line_ *next;
 } Line;
 
-typedef struct _Cmd {
+typedef struct Cmd_ {
 	CmdType type;
 	int addr1;
 	int addr2;
 	Line *old;
 	Line *new;
-	struct _Cmd *next;
+	struct Cmd_ *next;
 } Cmd;
-
-// The start of the file to write.
-Line *BUFFER = NULL;
 
 // Add a command to this stack when you DO/REDO a command.
 Cmd *UNDO_STACK = NULL;
@@ -63,8 +60,21 @@ Cmd *stack_pop(Cmd **stack, int *size) {
 	return top;
 }
 
+typedef struct Node_ {
+	char *value;
+	struct Node_ *parent, *left, *right;
+	unsigned size;
+} Node;
+
+typedef struct Tree_ {
+	Node *root;
+	unsigned size;
+} Tree;
+
+char **inOrder(Tree *tree);
+
 // DEBUG
-void debug_printCmd(Cmd *cmd) {
+__unused void debug_printCmd(Cmd *cmd) {
 	if (cmd == NULL) {
 		printf("| <NULL>\n");
 		return;
@@ -89,16 +99,7 @@ void debug_printCmd(Cmd *cmd) {
 	printf("\n+---------\n");
 }
 
-void debug_printList(Line *l) {
-	Line *tmp = l;
-	while(tmp) {
-		printf("%s-", tmp->text);
-		tmp = tmp->next;
-	}
-	printf("\n");
-}
-
-int debug_countList(Line *l) {
+__unused int debug_countList(Line *l) {
 	Line *tmp = l;
 	int i = 0;
 	while(tmp) {
@@ -106,6 +107,16 @@ int debug_countList(Line *l) {
 		tmp = tmp->next;
 	}
 	return i;
+}
+
+__unused void debug_printTree(Tree *tree) {
+	if (tree) {
+		char **sstr = inOrder(tree);
+		for (unsigned xx = 0; xx < tree->size; xx++) {
+			printf("%s ", sstr[xx]);
+		}
+		printf("\n");
+	} else printf("<null>\n");
 }
 
 // Commands from input
@@ -158,96 +169,321 @@ Cmd *newCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
 	return allocatedCmd;
 }
 
-// Get the last item in a List of Lines
-Line *getLastLine(Line *list) {
-	Line *curr = list;
-	while(curr->next) {
-		curr = curr->next;
-	}
-	return curr;
-}
-
 // DATA STRUCTURE
-// A collection of functions that update the buffer
 
-Line *goToLine(int number) {
-	if (number < 1) return NULL;
-	Line *curr = BUFFER;
-	for (int i = 1; i < number && curr; i++) {
-		curr = curr->next;
+static inline Node *createNode(char *value) {
+	Node *node = malloc(sizeof(Node));
+	node->value = value;
+	node->size = 1;
+	node->parent = NULL;
+	node->left = NULL;
+	node->right = NULL;
+	return node;
+}
+
+static inline Tree *createTree() {
+	Tree *tree = malloc(sizeof(Tree));
+	tree->root = NULL;
+	tree->size = 0;
+	return tree;
+}
+
+void postOrderFree_r(Node *n) {
+	if (n == NULL) return;
+	postOrderFree_r(n->left);
+	postOrderFree_r(n->right);
+	free(n);
+	//free(n->value);
+}
+
+void destroyTree(Tree *tree) {
+	if (tree == NULL) return;
+	else if (tree->root == NULL) {
+		free(tree);
+		return;
 	}
-	return curr;
+	postOrderFree_r(tree->root);
+	free(tree);
 }
 
-// Append the passed list at the prev item.
-// Example: If you add lines at 3, you append them at 2, and the old 3
-// will be appended at the last item of the list.
-void insertLines(Line *prev, Line *list) {
-	Line *tmp;
-	if (prev == NULL) {
-		tmp = BUFFER;
-		BUFFER = list;
-		getLastLine(list)->next = tmp;
-	} else {
-		tmp = prev->next;
-		prev->next = list;
-		getLastLine(list)->next = tmp;
+/* Iterative in-order traversal.
+ * Takes a tree* as input, and returns a string (a pointer to char).
+ * It's faster to return (copy) one pointer than the whole string.
+ * It could print nodes directly as it traverses the tree (and return void),
+ * but that would mean calling putchar() or printf("%c") a large number of times,
+ * instead of "appending" to the array result. */
+char **inOrder(Tree *tree) {
+	Node *current = tree->root;
+
+	char **result = calloc(tree->size, sizeof(*result)); // Slower
+	// static char *result[S_MAX_LEN]; // Faster
+
+	unsigned i = 0;
+	if (current == NULL)
+		return result;
+	Node **stack = malloc(tree->size * sizeof(**stack));
+	size_t stackIndex = 0;
+
+	while (true) {
+		while (current) {
+			stack[stackIndex] = current;
+			stackIndex++;
+			current = current->left;
+		}
+		if (stackIndex) {
+			stackIndex--;
+			current = stack[stackIndex];
+			result[i] = current->value;
+			i++;
+			current = current->right;
+		}
+		else
+			break;
+	}
+	free(stack);
+	return result;
+}
+
+// Pointer to a tree, and a pointer to its node object that we want to rotate right.
+static void rotateRight(Tree *tree, Node *node) {
+	Node *parent = node->parent;
+	Node *Y = node->left;
+
+	if (Y == NULL) return; // we can't rotate the node with nothing!
+
+	Node *B = Y->right;
+	Y->parent = parent;
+	if (parent) {
+		if (node == parent->left)                               // node is left child
+			parent->left = Y;
+		else                                                    // node is right child
+			parent->right = Y;
+	}
+	else
+		tree->root = Y;
+
+	node->parent = Y;
+	Y->right = node;
+	if (B)
+		B->parent = node;
+	node->left = B;
+
+	node->size = (node->left ? node->left->size : 0) + (node->right ? node->right->size : 0) + 1;
+	Y->size = (Y->left ? Y->left->size : 0) + (Y->right ? Y->right->size : 0) + 1;
+}
+
+// Input: Pointer to a tree, and a pointer to its node object that we want to rotate left.
+static void rotateLeft(Tree *tree, Node *node) {
+	Node *parent = node->parent;
+	Node *X = node->right;
+	if (!X)
+		return; // we can't rotate the node with nothing!
+	Node *B = X->left;
+	X->parent = parent;
+	if (parent) {
+		if (node == parent->left) // node is left child
+			parent->left = X;
+		else // node is right child
+			parent->right = X;
+	}
+	else
+		tree->root = X;
+
+	node->parent = X;
+	X->left = node;
+	if (B)
+		B->parent = node;
+	node->right = B;
+
+	node->size = (node->left ? node->left->size : 0) + (node->right ? node->right->size : 0) + 1;
+	X->size = (X->left ? X->left->size : 0) + (X->right ? X->right->size : 0) + 1;
+}
+
+// Splays node to the top of the tree, making it new root of the tree.
+// Input: Pointer to a tree, and a pointer to its node object that we want to splay to the root.
+void splay(Tree *tree, Node *node) {
+	if (node == NULL) return;
+
+	Node *parent = node->parent;
+
+	while (parent) {
+		Node *grandParent = parent->parent;
+
+		if (!grandParent) {
+			/* Zig */
+			if (node == parent->left)
+				rotateRight(tree, parent);
+			else
+				rotateLeft(tree, parent);
+		}
+
+		else if (node == parent->left) {
+			if (parent == grandParent->left) {
+				/* Zig-zig */
+				rotateRight(tree, grandParent);
+				rotateRight(tree, parent);
+			}
+			else {
+				/* Zig-zag - if (parent == grandParent->right) */
+				rotateRight(tree, parent);
+				rotateLeft(tree, grandParent);
+			}
+		}
+
+		else if (node == parent->right) {
+			if (parent == grandParent->right) {
+				/* Zig-zig */
+				rotateLeft(tree, grandParent);
+				rotateLeft(tree, parent);
+			}
+			else {
+				/* Zig-zag (parent == grandParent.left) */
+				rotateLeft(tree, parent);
+				rotateRight(tree, grandParent);
+			}
+		}
+
+		parent = node->parent;
 	}
 }
 
-void updateLines(Line *prev) {
 
-}
+// METHODS TO USE
 
-// Returns the deleted lines as a list with the last item linked to NULL;
-Line *deleteLines(Line *prev, Line *curr, int quantity) {
-	if (prev == NULL && curr == NULL) return NULL;
-
-
-	Line *tmp = curr;
-	Line *next = NULL;
-	for (int i = 0; i < quantity; i++) {
-		if (tmp == NULL) {
-			// If the list ends too soon it means that
-			// we're at the end of the buffer, nothing
-			// more to delete.
+/* Input: Integer number k - the rank of a node (0 <= k < size of the whole tree).
+ * Output: The k-esim smallest element in the tree (a node object). Counting starts from 0.
+ * This is a public method, which splays the found node to the top of the tree. */
+Node *Index(Tree *tree, unsigned k) {
+	Node *node = tree->root;
+	while (node) {
+		Node *left = node->left;
+		Node *right = node->right;
+		unsigned s = left ? left->size : 0;
+		if (k == s)
 			break;
-		} else if (i == quantity - 1) {
-			// We're at the last item
-			// we're unlinking it from the next.
-			next = tmp->next;
-			tmp->next = NULL;
+		else if (k < s) {
+			if (left) {
+				node = left;
+				continue;
+			}
 			break;
-		} else {
-			// Go next
-			tmp = tmp->next;
+		}
+		else {
+			if (right) {
+				k = k - s - 1;
+				node = right;
+				continue;
+			}
+			break;
 		}
 	}
-	if (prev == NULL && curr != NULL) {
-		// We're editing the first line
-		// [BUFFER] ->> NEXT
-		BUFFER = next;
-	} else {
-		// PREV ->> NEXT
-		prev->next = next;
-	}
-
-	return curr;
+	splay(tree, node);
+	return node;
 }
 
-void printLines(Line *line, int quantity) {
-	Line *tmp = line;
-	for (int i = 0; i < quantity; i++) {
-		if (tmp == NULL) {
-			printf(".\n");
-		} else {
-			printf("%s\n", tmp->text);
-			tmp = tmp->next;
-		}
+static Node *subtreeMaximum(Tree *tree, Node *node) {
+	if (!node)
+		return NULL;
+	while (node->right)
+		node = node->right;
+	splay(tree, node);
+	return node;
+}
+
+// Merges two Splay trees, tree1 and tree2, using the last element (of highest rank)
+// in tree1 (left string) as the node for merging, into a new tree.
+static Tree *Concat(Tree *tree1, Tree *tree2) {
+	if (tree1 == NULL || tree1->root == NULL)
+		return tree2;
+	if (tree2 == NULL || tree2->root == NULL)
+		return tree1;
+	Node *root2 = tree2->root;
+	Node *root1 = subtreeMaximum(tree1, tree1->root);
+	root2->parent = root1;
+	root1->right = root2;
+	root1->size = (root1->left ? root1->left->size : 0) + (root1->right ? root1->right->size : 0) + 1;
+	tree1->size = root1->size;
+	return tree1;
+}
+
+// Splits the Tree into two trees at the rank-esim element from the left.
+// A B C D split at 1 is (A B) (C D).
+static void Split(Tree *tree, unsigned rank, Tree **tree1, Tree **tree2) {
+	Node *root1 = Index(tree, rank);
+	Node *root2 = root1->right;
+	root1->right = NULL;
+	root1->size = (root1->left ? root1->left->size : 0) + (root1->right ? root1->right->size : 0) + 1;
+	*tree1 = createTree();
+	(*tree1)->root = root1;
+	(*tree1)->size = root1->size;
+	*tree2 = createTree();
+	if (root2) {
+		root2->parent = NULL;
+		(*tree2)->root = root2;
+		(*tree2)->size = root2->size;
 	}
 }
 
-// CODE
+static Tree* Delete(Tree **tree, unsigned i, unsigned j) {
+	Tree *left = NULL, *middle = NULL, *right = NULL;
+	Split(*tree, j, &middle, &right);
+	if (i > 0)
+		Split(middle, i-1, &left, &middle);
+
+	*tree = Concat(left, right);
+	return middle;
+}
+
+static void Insert(Tree **tree, unsigned rank, char *value) {
+	Node *node = createNode(value);
+	Tree *node_tree = createTree();
+	node_tree->root = node;
+	node_tree->size = 1;
+	Tree *left = NULL, *right = *tree;
+	if (rank > 0)
+		Split(*tree, rank-1, &left, &right);
+
+	*tree = Concat(Concat(left, node_tree), right);
+}
+
+
+typedef struct List_ {
+	Node *value;
+	struct List_ *next;
+} List;
+
+List *createListItem(Node *node) {
+	List *l = malloc(sizeof(List));
+	assert(l != NULL);
+	l->value = node;
+	l->next = NULL;
+	return l;
+}
+
+void listPush(List **l, Node *n) {
+	static List *tail = NULL;
+	List *newItem = createListItem(n);
+	if (*l != NULL) // List already exists
+		tail->next = newItem;
+	else // List doesn't exists
+		*l = newItem;
+	tail = newItem;
+}
+
+List *Report(Tree *tree, unsigned i, unsigned j) {
+	assert(i >= 0);
+	assert(i <= j);
+	List *l = NULL;
+	for (unsigned t = i; t <= j; t++) {
+		Node *n = Index(tree, t);
+		assert(n != NULL);
+		listPush(&l, n);
+	}
+
+	return l;
+}
+
+// INTRO CODE
 
 void parseInput() {
 	fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
@@ -315,9 +551,7 @@ void change(int addr1, int addr2) {
 	Line *newLines = getInputLines(addr2 - addr1 + 1, &lastNewLine);
 
 	// REMOVE the old lines
-	Line *prev = goToLine(addr1 - 1);
-	Line *curr = prev ? prev->next : goToLine(addr1);
-	Line *oldLines = deleteLines(prev, curr, addr2 - addr1 + 1);
+	// TODO: Make a new function
 
 	assert(debug_countList(newLines) >= debug_countList(oldLines));
 
@@ -326,7 +560,7 @@ void change(int addr1, int addr2) {
 	stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 
 	// Substitute the old lines with the new ones
-	insertLines(prev, newLines);
+
 }
 
 void delete(int addr1, int addr2) {
@@ -336,10 +570,7 @@ void delete(int addr1, int addr2) {
 		return;
 	}
 
-	// REMOVE the old lines
-	Line *prev = goToLine(addr1 - 1);
-	Line *curr = prev ? prev->next : goToLine(addr1);
-	Line *oldLines = deleteLines(prev, curr, addr2 - addr1 + 1);
+	// TODO: REMOVE the old lines
 
 	// Add Command to undo stack
 	Cmd *cmd = newCmd(DELETE, addr1, addr2, oldLines, NULL);
@@ -351,7 +582,7 @@ void print(int addr1, int addr2) {
 		printf(".\n");
 		return;
 	}
-	printLines(goToLine(addr1), addr2-addr1+1);
+	// TODO: Fetch and print lines
 }
 
 void undo(int times) {
@@ -362,6 +593,7 @@ void undo(int times) {
 }
 
 void redo(int times) {
+	debug_printCmd(stack_pop(&REDO_STACK, &REDO_STACK_SIZE));
 	/* Get the top cmd from REDO_STACK and "redo" its action.
 	 * Then, move it to the UNDO_STACK. */
 }
