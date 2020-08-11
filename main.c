@@ -37,6 +37,8 @@ typedef struct Tree_ {
     unsigned size;
 } Tree;
 
+// Counter for how many Undo/Redo remains to be applied
+int UR = 0;
 // Add a command to this stack when you DO/REDO a command.
 Cmd *UNDO_STACK = NULL;
 int UNDO_STACK_SIZE = 0;
@@ -176,6 +178,10 @@ static inline Line *createListItem(Node *node);
 
 static inline void listPush(Line **l, Node *n);
 
+static void clearLineList(Line *l);
+
+static void clearRedoStack();
+
 // Tree Definitions
 
 static inline Tree *createTree();
@@ -192,6 +198,8 @@ void print(int addr1, int addr2);
 void undo(int times);
 
 void redo(int times);
+
+void applyUR();
 
 int main() {
     BUFFER = createTree();
@@ -519,6 +527,7 @@ static Tree *Delete(Tree **tree, unsigned i, unsigned j) {
 }
 
 static void Insert(Tree **tree, unsigned rank, char *value) {
+    if (value == NULL) return;
     Node *node = createNode(value);
     Tree *node_tree = createTree();
     node_tree->root = node;
@@ -635,6 +644,9 @@ Line *getInputLines(int quantity) {
 }
 
 void change(int addr1, int addr2) {
+    applyUR();
+    clearRedoStack();
+
     Line *oldLines = Report(BUFFER, addr1 - 1, addr2 - 1);
     Line *newLines = getInputLines(addr2 - addr1 + 1);
 
@@ -651,11 +663,12 @@ void change(int addr1, int addr2) {
 
     // Substitute the old lines with the new ones
     InsertMultiple(&BUFFER, addr1 - 1, addr2 - 1, newLines);
-//    debug_printCmd(cmd);
-//    debug_printTree(BUFFER);
 }
 
 void delete(int addr1, int addr2) {
+    applyUR();
+    clearRedoStack();
+
     assert(addr1 >= 0);
     Line *oldLines = NULL;
 
@@ -688,12 +701,11 @@ void delete(int addr1, int addr2) {
     // Add Command to undo stack
     Cmd *cmd = newCmd(DELETE, addr1, addr2, oldLines, NULL);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
-
-//    debug_printCmd(cmd);
-//    debug_printTree(BUFFER);
 }
 
 void print(int addr1, int addr2) {
+    applyUR();
+
     assert(addr1 >= 0);
     if (addr1 == 0 && addr2 == 0) {
         printf(".\n");
@@ -730,14 +742,75 @@ void print(int addr1, int addr2) {
 }
 
 void undo(int times) {
-    debug_printCmd(stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE));
-    // FIRST OPTIMIZE AND CHECK FOR BOUNDS.
-    /* Get the top cmd from UNDO_STACK and "undo" its action.
-     * Then, move it to the REDO_STACK. */
+    // UR = min(UNDO_STACK_SIZE, times)
+    UR -= times > UNDO_STACK_SIZE ? UNDO_STACK_SIZE : times;
 }
 
 void redo(int times) {
-    debug_printCmd(stack_pop(&REDO_STACK, &REDO_STACK_SIZE));
-    /* Get the top cmd from REDO_STACK and "redo" its action.
-     * Then, move it to the UNDO_STACK. */
+    // UR = min(REDO_STACK_SIZE, times)
+    UR += times > REDO_STACK_SIZE ? REDO_STACK_SIZE : times;
+}
+
+void applyUndo() {
+    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
+    Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
+    assert(cmd != NULL);
+    if (cmd->type == CHANGE) {
+        // UNDO: Remove lines from addr1 to addr2
+        //       and add at addr1 the old lines
+        destroyTree(Delete(&BUFFER, cmd->addr1 - 1, cmd->addr2 - 1));
+        Line *tmp = cmd->old;
+        while (tmp) {
+            Insert(&BUFFER, cmd->addr1 - 1, tmp->text);
+            tmp = tmp->next;
+        }
+    } else { // DELETE
+        unsigned addr, offset = 0;
+        if (cmd->addr2 == 0) {
+            // do nothing
+        } else {
+            if (cmd->addr1 == 0) addr = 0;
+            else addr = cmd->addr1 - 1;
+            Line *tmp = cmd->old;
+            while (tmp) {
+                Insert(&BUFFER, addr + offset, tmp->text);
+                offset++;
+                tmp = tmp->next;
+            }
+        }
+    }
+    stack_push(&REDO_STACK, &REDO_STACK_SIZE, cmd);
+}
+
+void applyRedo() {
+    assert(UR > 0 && UR <= REDO_STACK_SIZE);
+}
+
+void applyUR() {
+    if (UR > 0) applyRedo();
+    else if (UR < 0) applyUndo();
+    // Reset UR
+    UR = 0;
+}
+
+void clearLineList(Line *l) {
+    Line *tmp = l;
+    while(tmp) {
+        free(tmp->text);
+        Line *next = tmp->next;
+        free(tmp);
+        tmp = next;
+    }
+}
+
+void clearRedoStack() {
+    REDO_STACK_SIZE = 0;
+    Cmd *cmd = REDO_STACK;
+    while(cmd) {
+        clearLineList(cmd->new);
+        Cmd *next = cmd->next;
+        free(cmd);
+        cmd = next;
+    }
+    REDO_STACK = NULL;
 }
