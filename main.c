@@ -529,7 +529,7 @@ static void Insert(Tree **tree, unsigned rank, char *value) {
 
     *tree = Concat(Concat(left, node_tree), right);
     // TODO: can save some space maybe, comment if things bug
-     free(right);
+    // free(right);
 }
 
 static void InsertMultiple(Tree **tree, unsigned i, unsigned j, Line *line) {
@@ -680,7 +680,7 @@ void delete(int addr1, int addr2) {
             }
         }
         oldLines = Report(BUFFER, i, j);
-        destroyTree(Delete(&BUFFER, i, i));
+        destroyTree(Delete(&BUFFER, i, j));
     } else {
         oldLines = NULL;
     }
