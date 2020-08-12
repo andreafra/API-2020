@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-// #define NDEBUG
+ #define NDEBUG
 #include <assert.h>
 
 #define MAX_INPUT_SIZE 1024
