@@ -201,6 +201,10 @@ void redo(int times);
 
 void applyUR();
 
+void applyUndo();
+
+void applyRedo();
+
 int main() {
     BUFFER = createTree();
 
@@ -644,7 +648,7 @@ Line *getInputLines(int quantity) {
 }
 
 void change(int addr1, int addr2) {
-    applyUR();
+//    applyUR();
     clearRedoStack();
 
     Line *oldLines = Report(BUFFER, addr1 - 1, addr2 - 1);
@@ -666,7 +670,7 @@ void change(int addr1, int addr2) {
 }
 
 void delete(int addr1, int addr2) {
-    applyUR();
+//    applyUR();
     clearRedoStack();
 
     assert(addr1 >= 0);
@@ -704,7 +708,7 @@ void delete(int addr1, int addr2) {
 }
 
 void print(int addr1, int addr2) {
-    applyUR();
+//    applyUR();
 
     assert(addr1 >= 0);
     if (addr1 == 0 && addr2 == 0) {
@@ -743,16 +747,21 @@ void print(int addr1, int addr2) {
 
 void undo(int times) {
     // UR = min(UNDO_STACK_SIZE, times)
-    UR -= times > UNDO_STACK_SIZE ? UNDO_STACK_SIZE : times;
+//    UR -= times > UNDO_STACK_SIZE ? UNDO_STACK_SIZE : times;
+
+    int initialStackSize = UNDO_STACK_SIZE;
+    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyUndo();
 }
 
 void redo(int times) {
     // UR = min(REDO_STACK_SIZE, times)
-    UR += times > REDO_STACK_SIZE ? REDO_STACK_SIZE : times;
+//    UR += times > REDO_STACK_SIZE ? UR - REDO_STACK_SIZE : times;
+    int initialStackSize = REDO_STACK_SIZE;
+    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyRedo();
 }
 
 void applyUndo() {
-    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
+//    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
     assert(cmd != NULL);
     if (cmd->type == CHANGE) {
@@ -783,12 +792,58 @@ void applyUndo() {
 }
 
 void applyRedo() {
-    assert(UR > 0 && UR <= REDO_STACK_SIZE);
+//    assert(UR > 0 && UR <= REDO_STACK_SIZE);
+
+    Cmd *cmd = stack_pop(&REDO_STACK, &REDO_STACK_SIZE);
+    assert(cmd != NULL);
+    if (cmd->type == CHANGE) {
+        assert(cmd->addr1 != 0);
+        if (cmd->old != NULL) {
+            destroyTree(Delete(&BUFFER,
+                               cmd->addr1 - 1,
+                               (cmd->addr2 > BUFFER->size ? BUFFER->size : cmd->addr2) - 1));
+        }
+        Line *tmp = cmd->new;
+        unsigned index = cmd->addr1 - 1;
+        while (tmp) {
+            Insert(&BUFFER, index, tmp->text);
+            index++;
+            tmp = tmp->next;
+        }
+    } else { // DELETE
+        unsigned addr1 = cmd->addr1, addr2 = cmd->addr2, i, j;
+
+        if (addr1 <= BUFFER->size) {
+            if (addr1 == 0) {
+                if (addr2 == 0) {
+                    i = 0;
+                    j = 0;
+                } else {
+                    i = 0;
+                    j = addr2 - 1;
+                }
+            } else {
+                if (addr2 <= BUFFER->size) {
+                    i = addr1 - 1;
+                    j = addr2 - 1;
+                } else {
+                    i = addr1 - 1;
+                    j = BUFFER->size - 1;
+                }
+            }
+            destroyTree(Delete(&BUFFER, i, j));
+        }
+    }
+    stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
 
 void applyUR() {
-    if (UR > 0) applyRedo();
-    else if (UR < 0) applyUndo();
+    if (UR > 0) {
+        for ( ; UR > 0; UR--) applyRedo();
+    }
+    else if (UR < 0) {
+        for ( ; UR < 0; UR++) applyUndo();
+    }
     // Reset UR
     UR = 0;
 }
@@ -804,7 +859,6 @@ void clearLineList(Line *l) {
 }
 
 void clearRedoStack() {
-    REDO_STACK_SIZE = 0;
     Cmd *cmd = REDO_STACK;
     while(cmd) {
         clearLineList(cmd->new);
@@ -813,4 +867,5 @@ void clearRedoStack() {
         cmd = next;
     }
     REDO_STACK = NULL;
+    REDO_STACK_SIZE = 0;
 }
