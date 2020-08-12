@@ -758,7 +758,8 @@ void print(int addr1, int addr2) {
     while (tmp) {
         printf("%s\n", tmp->text);
         Line *next = tmp->next;
-        tmp = tmp->next;
+        free(tmp);
+        tmp = next;
     }
     for (; dots > 0; dots--) {
         printf(".\n");
