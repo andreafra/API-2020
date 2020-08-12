@@ -60,17 +60,16 @@ void parseInput();
 
 // Undo/Redo stack operations
 void stack_push(Cmd **stack, int *size, Cmd *item) {
-    if (*stack == NULL) {
-        *stack = item;
-    } else {
-        item->next = *stack;
-        *stack = item;
-    }
+    item->next = *stack;
+    *stack = item;
     *size += 1;
 }
 
 Cmd *stack_pop(Cmd **stack, int *size) {
-    if (*stack == NULL) return NULL;
+    if (*stack == NULL) {
+        assert(*size == 0);
+        return NULL;
+    }
     Cmd *top = *stack;
     *stack = top->next;
     *size -= 1;
@@ -136,11 +135,11 @@ void debug_printTree(Tree *tree) {
     } else printf("<null>\n");
 }
 
-char *newText(char *text);
+char *createText(char *text);
 
-Line *newLine(char *text);
+Line *createLine(char *text);
 
-Cmd *newCmd(CmdType type, int addr1, int addr2, Line *old, Line *new);
+Cmd *createCmd(CmdType type, int addr1, int addr2, Line *old, Line *new);
 
 static inline Node *createNode(char *value);
 
@@ -235,7 +234,7 @@ int main() {
 }
 
 // Save a string with the minimum size possible.
-char *newText(char *text) {
+char *createText(char *text) {
     // \n should be excluded from the string
     assert(text[strlen(text) - 1] != '\n');
     char *allocatedStr = malloc(strlen(text) * sizeof(char) + 1);
@@ -245,7 +244,7 @@ char *newText(char *text) {
 }
 
 // Create a new Line by passing a string pointer. The string WILL NOT be saved.
-Line *newLine(char *text) {
+Line *createLine(char *text) {
     Line *allocatedLine = malloc(sizeof(Line));
     assert(allocatedLine != NULL);
     allocatedLine->next = NULL;
@@ -254,7 +253,7 @@ Line *newLine(char *text) {
 }
 
 // Create a new Command
-Cmd *newCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
+Cmd *createCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
     Cmd *allocatedCmd = malloc(sizeof(Cmd));
     assert(allocatedCmd != NULL);
     allocatedCmd->type = type;
@@ -633,7 +632,7 @@ Line *getInputLines(int quantity) {
         char *input = strtok(INPUT_STRING, "\n");
         assert(input != NULL);
         // Save the string in a Line
-        Line *nLine = newLine(newText(input));
+        Line *nLine = createLine(createText(input));
 
         if (list == NULL)
             list = nLine;
@@ -662,7 +661,7 @@ void change(int addr1, int addr2) {
 
 
     // Add Command to undo stack
-    Cmd *cmd = newCmd(CHANGE, addr1, addr2, oldLines, newLines);
+    Cmd *cmd = createCmd(CHANGE, addr1, addr2, oldLines, newLines);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 
     // Substitute the old lines with the new ones
@@ -703,7 +702,7 @@ void delete(int addr1, int addr2) {
     }
 
     // Add Command to undo stack
-    Cmd *cmd = newCmd(DELETE, addr1, addr2, oldLines, NULL);
+    Cmd *cmd = createCmd(DELETE, addr1, addr2, oldLines, NULL);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
 
@@ -763,14 +762,17 @@ void redo(int times) {
 void applyUndo() {
 //    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
-    assert(cmd != NULL);
+//    debug_printCmd(cmd);
+      assert(cmd != NULL);
     if (cmd->type == CHANGE) {
         // UNDO: Remove lines from addr1 to addr2
         //       and add at addr1 the old lines
         destroyTree(Delete(&BUFFER, cmd->addr1 - 1, cmd->addr2 - 1));
         Line *tmp = cmd->old;
+        unsigned index = cmd->addr1 - 1;
         while (tmp) {
-            Insert(&BUFFER, cmd->addr1 - 1, tmp->text);
+            Insert(&BUFFER, index, tmp->text);
+            index++;
             tmp = tmp->next;
         }
     } else { // DELETE
@@ -859,12 +861,11 @@ void clearLineList(Line *l) {
 }
 
 void clearRedoStack() {
-    Cmd *cmd = REDO_STACK;
-    while(cmd) {
-        clearLineList(cmd->new);
-        Cmd *next = cmd->next;
-        free(cmd);
-        cmd = next;
+    while(REDO_STACK) {
+        clearLineList(REDO_STACK->new);
+        Cmd *next = REDO_STACK->next;
+        free(REDO_STACK);
+        REDO_STACK = next;
     }
     REDO_STACK = NULL;
     REDO_STACK_SIZE = 0;
