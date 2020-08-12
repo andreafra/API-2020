@@ -1,5 +1,6 @@
 # Ignore compiled program
 main.o
+main
 # Ignore test output
 test_output
 # Ignore .vscode
