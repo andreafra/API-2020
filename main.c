@@ -265,6 +265,27 @@ Cmd *createCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
     return allocatedCmd;
 }
 
+void clearLineList(Line *l) {
+    Line *tmp = l;
+    while(tmp) {
+        free(tmp->text);
+        Line *next = tmp->next;
+        free(tmp);
+        tmp = next;
+    }
+}
+
+void clearRedoStack() {
+    while(REDO_STACK) {
+        clearLineList(REDO_STACK->new);
+        Cmd *next = REDO_STACK->next;
+        free(REDO_STACK);
+        REDO_STACK = next;
+    }
+    REDO_STACK = NULL;
+    REDO_STACK_SIZE = 0;
+}
+
 // DATA STRUCTURE
 
 static inline Node *createNode(char *value) {
@@ -496,7 +517,7 @@ static Tree *Concat(Tree *tree1, Tree *tree2) {
     root1->right = root2;
     root1->size = (root1->left ? root1->left->size : 0) + (root1->right ? root1->right->size : 0) + 1;
     tree1->size = root1->size;
-    // TODO: CHECK
+    // check if mem leaks
     free(tree2);
     return tree1;
 }
@@ -647,7 +668,7 @@ Line *getInputLines(int quantity) {
 }
 
 void change(int addr1, int addr2) {
-//    applyUR();
+    applyUR();
     clearRedoStack();
 
     Line *oldLines = Report(BUFFER, addr1 - 1, addr2 - 1);
@@ -669,7 +690,7 @@ void change(int addr1, int addr2) {
 }
 
 void delete(int addr1, int addr2) {
-//    applyUR();
+    applyUR();
     clearRedoStack();
 
     assert(addr1 >= 0);
@@ -707,7 +728,7 @@ void delete(int addr1, int addr2) {
 }
 
 void print(int addr1, int addr2) {
-//    applyUR();
+    applyUR();
 
     assert(addr1 >= 0);
     if (addr1 == 0 && addr2 == 0) {
@@ -745,25 +766,40 @@ void print(int addr1, int addr2) {
 }
 
 void undo(int times) {
-    // UR = min(UNDO_STACK_SIZE, times)
-//    UR -= times > UNDO_STACK_SIZE ? UNDO_STACK_SIZE : times;
+    int possibleUndo = UNDO_STACK_SIZE + UR;
+    UR -= times > possibleUndo ? possibleUndo : times;
 
-    int initialStackSize = UNDO_STACK_SIZE;
-    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyUndo();
+    assert(UR >= -UNDO_STACK_SIZE);
+
+//    int initialStackSize = UNDO_STACK_SIZE;
+//    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyUndo();
 }
 
 void redo(int times) {
-    // UR = min(REDO_STACK_SIZE, times)
-//    UR += times > REDO_STACK_SIZE ? UR - REDO_STACK_SIZE : times;
-    int initialStackSize = REDO_STACK_SIZE;
-    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyRedo();
+    int possibleRedo = REDO_STACK_SIZE - UR;
+    UR += times > possibleRedo ? possibleRedo : times;
+
+    assert(UR <= REDO_STACK_SIZE);
+
+//    int initialStackSize = REDO_STACK_SIZE;
+//    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyRedo();
+}
+
+void applyUR() {
+    if (UR > 0) {
+        for ( ; UR > 0; UR--) applyRedo();
+    }
+    else if (UR < 0) {
+        for ( ; UR < 0; UR++) applyUndo();
+    }
+    // Reset UR
+    UR = 0;
 }
 
 void applyUndo() {
 //    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
-//    debug_printCmd(cmd);
-      assert(cmd != NULL);
+    assert(cmd != NULL);
     if (cmd->type == CHANGE) {
         // UNDO: Remove lines from addr1 to addr2
         //       and add at addr1 the old lines
@@ -837,36 +873,4 @@ void applyRedo() {
         }
     }
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
-}
-
-void applyUR() {
-    if (UR > 0) {
-        for ( ; UR > 0; UR--) applyRedo();
-    }
-    else if (UR < 0) {
-        for ( ; UR < 0; UR++) applyUndo();
-    }
-    // Reset UR
-    UR = 0;
-}
-
-void clearLineList(Line *l) {
-    Line *tmp = l;
-    while(tmp) {
-        free(tmp->text);
-        Line *next = tmp->next;
-        free(tmp);
-        tmp = next;
-    }
-}
-
-void clearRedoStack() {
-    while(REDO_STACK) {
-        clearLineList(REDO_STACK->new);
-        Cmd *next = REDO_STACK->next;
-        free(REDO_STACK);
-        REDO_STACK = next;
-    }
-    REDO_STACK = NULL;
-    REDO_STACK_SIZE = 0;
 }
