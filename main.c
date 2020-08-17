@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <string.h>
 
- #define NDEBUG
 #include <assert.h>
 
 #define MAX_INPUT_SIZE 1024
@@ -25,6 +24,7 @@ typedef struct Range {
 typedef struct Cmd {
     CmdType type;
     int addr1, addr2;
+    Line *start_neighbour, *end_neighbour;
     Range *old, *new;
     struct Cmd *next;
 } Cmd;
@@ -38,6 +38,18 @@ typedef struct Cmd {
 	a->next = NULL;\
 	b->prev = NULL;\
 	}
+
+#define UNLINK_PAIR(p) {\
+    p->start->prev = NULL;\
+    p->end->next = NULL;\
+}
+
+#define MAX(a, b) (a > b ? a : b)
+
+#define MIN(a, b) (a < b ? a : b)
+
+#define CAP(x, cap) (x > cap ? cap : x)
+
 
 // Counter for how many Undo/Redo remains to be applied
 int UR = 0;
@@ -78,6 +90,26 @@ Cmd *stack_pop(Cmd **stack, int *size) {
 }
 
 // DEBUG
+void debug_printList(Line *l) {
+    Line *start = NULL;
+    Line *tmp = l;
+    while (tmp && tmp != start) {
+        start = l;
+        printf("%s", tmp->text);
+        tmp = tmp->next;
+    }
+    printf("\n");
+}
+
+void debug_printRange(Range *r) {
+    if (r == NULL)
+        printf("=> Range is Null\n");
+    else if (r->start == NULL || r->end == NULL)
+        printf("=> Range.start or Range.end is NULL\n");
+    else
+        printf("[ Start: %s | End: %s | Size: %d ]\n", r->start->text, r->end->text, r->size);
+}
+
 void debug_printCmd(Cmd *cmd) {
     if (cmd == NULL) {
         printf("| <NULL>\n");
@@ -88,23 +120,14 @@ void debug_printCmd(Cmd *cmd) {
     printf("| Addr1: %d\n", cmd->addr1);
     printf("| Addr2: %d\n", cmd->addr2);
     printf("| Old: ");
-
+    if (cmd->old)
+        debug_printRange(cmd->old);
     printf("\n");
     printf("| New: ");
-
-    printf("\n+---------\n");
-}
-
-void debug_printList(Line *l) {
-	Line *start = NULL;
-	Line *tmp = l;
-    while (tmp && tmp != start) {
-    	start = l;
-        printf("%s ", tmp->text);
-        tmp = tmp->next;
-    }
-    printf("\n");
-}
+    if (cmd->new)
+        debug_printRange(cmd->new);
+    printf("| Prev: %s\n", cmd->start_neighbour ? cmd->start_neighbour->text : "(null)");
+    printf("| Next: %s\n", cmd->end_neighbour ? cmd->end_neighbour->text : "(null)");}
 
 int debug_countList(Line *l) {
 	Line *start = NULL;
@@ -122,7 +145,7 @@ char *createText(char *text);
 
 Line *createLine(char *text);
 
-Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new);
+Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new, Line*, Line*);
 
 void clearRedoStack();
 
@@ -144,18 +167,44 @@ void applyUndo();
 
 void applyRedo();
 
-void insert(const int index, const Range *list);
+void insert(int index, const Range *list);
+
+Range *getRange(int i, int j);
 
 int main() {
-	Range *a = getInputLines(1);
-	Range *b = getInputLines(1);
-	Range *c = getInputLines(1);
-	Range *d = getInputLines(1);
-
-	insert(1, a);
-	insert(1, b);
-	insert(2, c);
-	insert(1, d);
+//    Line* p;
+//    Line* q;
+//
+//    Range *a = getInputLines(1);
+//	Range *b = getInputLines(1);
+//	Range *c = getInputLines(1);
+//	Range *d = getInputLines(1);
+//    Range *e = getInputLines(1);
+//
+//    debug_printRange(get(1, 1, &p, &q));
+//
+//    insert(1, a);
+//
+//    debug_printRange(get(1, 1, &p, &q));
+//
+//
+//    insert(2, b);
+//
+//    debug_printRange(get(1, 2, &p, &q));
+//
+//    insert(3, c);
+//	insert(4, d);
+//    insert(5, e);
+//
+//
+//    debug_printList(BUFFER);
+//
+//	debug_printRange(get(1, 1, &p, &q));
+//    debug_printRange(get(5, 5, &p, &q));
+//    debug_printRange(get(1, 10, &p, &q));
+//    debug_printRange(get(1, 4));
+//    debug_printRange(get(1, 2));
+//    debug_printRange(get(4, 5));
 
 	while (!SHOULD_QUIT) {
         // Each iteration is a command
@@ -184,7 +233,7 @@ Line *createLine(char *text) {
 }
 
 // Create a new Command
-Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new) {
+Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new, Line *start_neightbour, Line *end_neightbour) {
     Cmd *allocatedCmd = malloc(sizeof(Cmd));
     assert(allocatedCmd != NULL);
     allocatedCmd->type = type;
@@ -192,18 +241,21 @@ Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new) {
     allocatedCmd->addr2 = addr2;
     allocatedCmd->old = old;
     allocatedCmd->new = new;
+    allocatedCmd->start_neighbour = start_neightbour;
+    allocatedCmd->end_neighbour = end_neightbour;
     allocatedCmd->next = NULL;
     return allocatedCmd;
 }
 
-void clearLineList(Line *l) {
-    Line *tmp = l;
+void clearLineList(Line **l) {
+    Line *tmp = *l;
     while(tmp) {
         free(tmp->text);
         Line *next = tmp->next;
         free(tmp);
         tmp = next;
     }
+    *l = NULL;
 }
 
 void clearRedoStack() {
@@ -219,49 +271,152 @@ void clearRedoStack() {
 }
 
 // DATA STRUCTURE
+
+// Insert an item in the buffer BEFORE the index-esim element.
+// If list is NULL, return and do nothing.
 void insert(const int index, const Range *list) {
-	assert(index >= 1 && index <= size + 1);
+    if (list == NULL || list->start == NULL || list->end == NULL) return;
+	assert(index >= 1 && index <= BUFFER_SIZE + 1);
 	if (BUFFER == NULL) { // like, who cares about the index
 		assert(BUFFER_SIZE == 0);
 		BUFFER = list->start;
 		LINK(list->start, list->end)
 	} else {
-		if (index < BUFFER_SIZE / 2) {
-			// Insert from head
-			Line *tmp = BUFFER;
-			for (int i = 0; i < index-1; i++) {
-				tmp = tmp->next;
-				assert(tmp != NULL);
-			}
-			// Now tmp is where I want to add stuff
-			Line *prev = tmp->prev;
-			Line *next = tmp;
-			LINK(prev, list->start)
-			LINK(list->end, next)
-		} else {
-			// Insert from tail
-			Line *tmp = BUFFER->prev;
-			for (int i = 0; i < BUFFER_SIZE - index; i++) {
-				tmp = tmp->prev;
-			}
-			// Now tmp is where I want to add stuff
-			Line *next = tmp->next;
-			Line *prev = tmp;
-			LINK(prev, list->start)
-			LINK(list->end, next)
-		}
+        Line *tmp = BUFFER;
+        if (index > BUFFER_SIZE/2 + 1) { // add from tail
+            int p = (BUFFER_SIZE + 1 - index);
+            for (int i = 0; i < p; ++i)
+                tmp = tmp->prev;
+            Line* prev = tmp->prev;
+            Line* next = tmp;
+
+            LINK(prev, list->start);
+            LINK(list->end, next);
+	    } else { // add from head
+            for (int i = 1; i < index; i++)
+                tmp = tmp->next;
+            Line* prev = tmp->prev;
+            Line* next = tmp;
+
+            LINK(prev, list->start);
+            LINK(list->end, next);
+	    }
 	}
-	if (index == 1) BUFFER = list->start;
+	if (index == 1) BUFFER = list->start; // same as adding at the end, but I need to update the BUFFER pointer
 	BUFFER_SIZE += list->size;
-
-	debug_printList(BUFFER);
 }
 
-Range *get(const int i, const int j) {
-
+Range *createRange(Line *start, Line *end, const int size) {
+    Range *res = malloc(sizeof(Range));
+    res->start = start;
+    res->end = end;
+    res->size = size;
+    return res;
 }
 
-// INTRO CODE
+// Return a range containing the start and the end of a sub-list
+Range *getRange(const int i, const int j) {
+    assert(1 <= i && i <= j <= BUFFER_SIZE);
+    if (BUFFER == NULL) {
+        return NULL; // It should never get called tho
+    }
+
+    Line *start = BUFFER, *end = BUFFER;
+    if (i > BUFFER_SIZE/2) {
+        // Get j first, then backward to i
+        for (int k = 0; k < BUFFER_SIZE - j + 1; k++) {
+            end = end->prev;
+        }
+        start = end;
+        for (int k = 0; k < j-i; k++) {
+            start = start->prev;
+        }
+    } else {
+        if (j-i < BUFFER_SIZE-j) {
+            // Get i, then forward count to j
+            for (int k = 1; k < i; k++) {
+                start = start->next;
+            }
+            end = start;
+            for (int k = 0; k < j-i; k++) {
+                end = end->next;
+            }
+        } else {
+            // Get i forward, and then j backward
+            for (int k = 1; k < i; k++) {
+                start = start->next;
+            }
+            for (int k = 0; k < BUFFER_SIZE - j + 1; k++) {
+                end = end->prev;
+            }
+        }
+    }
+    return createRange(start, end, j-i+1);
+}
+
+void bufferAppend(Range *r, Line **prev, Line **next) {
+    assert(r != NULL);
+    if (BUFFER == NULL) {
+        // Update buffer too
+        BUFFER = r->start;
+        LINK(r->end, r->start);
+        BUFFER_SIZE = r->size;
+        *prev = NULL;
+        *next = NULL;
+        return;
+    } else {
+        // Never update buffer here
+        Line *end = BUFFER->prev;
+        LINK(r->end, BUFFER);
+        LINK(end, r->start);
+        BUFFER_SIZE += r->size;
+        *next = BUFFER;
+        *prev = end;
+    }
+}
+
+// Returns unlinked old range.
+// Replaces old with new
+Range *bufferChange(Range *old, Range *new, Line **prev, Line **next) {
+    assert(old != NULL);
+    if (BUFFER_SIZE == 1 || // I'm changing a single block
+        (old->start->prev == old->end && old->end->next == old->start)) { // I'm updating everything
+        // Update buffer
+        BUFFER = new->start;
+        LINK(new->end, new->start)
+        *prev = NULL;
+        *next = NULL;
+    } else {
+        Line *prev_ = old->start->prev;
+        Line *next_ = old->end->next;
+        LINK(prev_, new->start)
+        LINK(new->end, next_)
+        *prev = prev_;
+        *next = next_;
+    }
+    UNLINK_PAIR(old);
+    BUFFER_SIZE += new->size - old->size;
+    return old;
+}
+
+Range *bufferDelete(Range *old, Line **prev, Line **next) {
+    if ((old->start->prev == NULL && old->end->next == NULL) ||
+        (old->start->prev == old->end && old->end->next == old->start)) {
+        // Delete everything
+        *prev = NULL;
+        *next = NULL;
+        UNLINK_PAIR(old)
+        BUFFER_SIZE -= old->size;
+        return old;
+    } else {
+        *prev = old->start->prev;
+        *next = old->end->next;
+        UNLINK_PAIR(old)
+        LINK((*prev), (*next))
+        BUFFER_SIZE -= old->size;
+        return old;
+    }
+}
 
 void parseInput() {
     fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
@@ -302,11 +457,8 @@ Range *getInputLines(int quantity) {
     for (int i = 0; i < quantity; i++) {
         // Get the new text line from stdin
         fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
-        // Remove \n from the string
-        char *input = strtok(INPUT_STRING_BUFFER, "\n");
-        assert(input != NULL);
         // Save the string in a Line
-        Line *nLine = createLine(createText(input));
+        Line *nLine = createLine(createText(INPUT_STRING_BUFFER));
 		if (range->start == NULL) { // first item
 			range->start = nLine;
 			range->end = nLine;
@@ -319,59 +471,63 @@ Range *getInputLines(int quantity) {
     // Chomp the '.'
     fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
 
+    // Make sure the ends of a range are fine
 	assert(range->start->prev == NULL);
 	assert(range->end->next == NULL);
     return range;
 }
 
 void change(int addr1, int addr2) {
-    applyUR();
-    clearRedoStack();
+    assert(0 <= addr1 && addr1 <= addr2);
+    //applyUR();
+    //clearRedoStack();
 
-    getInputLines(addr2-addr1+1);
+    Line *prev = NULL, *next = NULL;
+
+    Range *old = NULL;
+    Range *new = getInputLines(addr2-addr1+1);
+    assert(new->start->prev == NULL && new->end->next == NULL);
+
+    if (addr1 > BUFFER_SIZE) {
+        //Only Append
+        assert(addr1 == BUFFER_SIZE + 1);
+        bufferAppend(new, &prev, &next);
+    } else {
+        if (addr2 <= BUFFER_SIZE) {
+            // Only Change
+            old = bufferChange(getRange(addr1, addr2), new, &prev, &next);
+            if (addr1 == 1) BUFFER = new->start;
+        } else {
+            // Change and append
+            old = bufferChange(getRange(addr1, CAP(addr2, BUFFER_SIZE)), new, &prev, &next);
+        }
+    }
 
     // Add Command to undo stack
-    Cmd *cmd = createCmd(CHANGE, addr1, addr2, NULL, NULL);
+    Cmd *cmd = createCmd(CHANGE, addr1, addr2, old, new, prev, next);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 
+//    debug_printCmd(cmd);
 }
 
 void delete(int addr1, int addr2) {
     applyUR();
     clearRedoStack();
-
     assert(addr1 >= 0);
-    Line *oldLines = NULL;
+    Range *old = NULL;
+    Line *prev = NULL, *next = NULL;
 
-    unsigned i, j;
-
-    if (addr1 <= BUFFER_SIZE) {
-        if (addr1 == 0) {
-            if (addr2 == 0) {
-                i = 0;
-                j = 0;
-            } else {
-                i = 0;
-                j = addr2 - 1;
-            }
-        } else {
-            if (addr2 <= BUFFER_SIZE) {
-                i = addr1 - 1;
-                j = addr2 - 1;
-            } else {
-                i = addr1 - 1;
-                j = BUFFER_SIZE - 1;
-            }
-        }
-        //oldLines = Report(BUFFER, i, j);
-        //destroyTree(Delete(&BUFFER, i, j));
-    } else {
-        oldLines = NULL;
+    if (!((addr1 == 0 && addr2 == 0) || (addr1 > BUFFER_SIZE))) {
+        int end = CAP(addr2, BUFFER_SIZE);
+        old = bufferDelete(getRange(addr1, end), &prev, &next);
+        // Update buffer if I delete the first item
+        if (addr1 == 1) BUFFER = next;
     }
 
     // Add Command to undo stack
-    Cmd *cmd = createCmd(DELETE, addr1, addr2, oldLines, NULL);
+    Cmd *cmd = createCmd(DELETE, addr1, addr2, old, NULL, prev, next);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
+
 }
 
 void print(int addr1, int addr2) {
@@ -383,7 +539,7 @@ void print(int addr1, int addr2) {
         return;
     }
 
-    unsigned i = addr1, j = addr2, dots = 0;
+    int i = addr1, j = addr2, dots = 0;
 
     if (i == 0 && j > 0) {
         i = 1;
@@ -396,18 +552,17 @@ void print(int addr1, int addr2) {
         } else { // i and j exists
             dots = 0;
         }
+        Line *tmp = BUFFER;
+        for (int k = 0; k < i-1; k++)
+            tmp = tmp->next;
+        for (; i <= j; i++) {
+            printf("%s", tmp->text);
+            tmp = tmp->next;
+        }
     } else {
         dots = addr2 - addr1 + 1;
     }
 
-    /*Line *lines = Report(BUFFER, i-1, j-1); // dealloc?
-    Line *tmp = lines;
-    while (tmp) {
-        printf("%s\n", tmp->text);
-        Line *next = tmp->next;
-        free(tmp);
-        tmp = next;
-    }*/
     for (; dots > 0; dots--) {
         printf(".\n");
     }
@@ -418,9 +573,6 @@ void undo(int times) {
     UR -= times > possibleUndo ? possibleUndo : times;
 
     assert(UR >= -UNDO_STACK_SIZE);
-
-//    int initialStackSize = UNDO_STACK_SIZE;
-//    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyUndo();
 }
 
 void redo(int times) {
@@ -428,9 +580,6 @@ void redo(int times) {
     UR += times > possibleRedo ? possibleRedo : times;
 
     assert(UR <= REDO_STACK_SIZE);
-
-//    int initialStackSize = REDO_STACK_SIZE;
-//    for (int i = 0; i < (times > initialStackSize ? initialStackSize : times); i++) applyRedo();
 }
 
 void applyUR() {
@@ -449,32 +598,11 @@ void applyUndo() {
 
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
     assert(cmd != NULL);
-    /*if (cmd->type == CHANGE) {
-        // UNDO: Remove lines from addr1 to addr2
-        //       and add at addr1 the old lines
-        destroyTree(Delete(&BUFFER, cmd->addr1 - 1, cmd->addr2 - 1));
-        Line *tmp = cmd->old;
-        unsigned index = cmd->addr1 - 1;
-        while (tmp) {
-            Insert(&BUFFER, index, tmp->text);
-            index++;
-            tmp = tmp->next;
-        }
+    if (cmd->type == CHANGE) {
+    
     } else { // DELETE
-        unsigned addr, offset = 0;
-        if (cmd->addr2 == 0) {
-            // do nothing
-        } else {
-            if (cmd->addr1 == 0) addr = 0;
-            else addr = cmd->addr1 - 1;
-            Line *tmp = cmd->old;
-            while (tmp) {
-                Insert(&BUFFER, addr + offset, tmp->text);
-                offset++;
-                tmp = tmp->next;
-            }
-        }
-    }*/
+
+    }
     stack_push(&REDO_STACK, &REDO_STACK_SIZE, cmd);
 }
 
@@ -483,43 +611,10 @@ void applyRedo() {
 
     Cmd *cmd = stack_pop(&REDO_STACK, &REDO_STACK_SIZE);
     assert(cmd != NULL);
-  /*  if (cmd->type == CHANGE) {
-        assert(cmd->addr1 != 0);
-        if (cmd->old != NULL) {
-            destroyTree(Delete(&BUFFER,
-                               cmd->addr1 - 1,
-                               (cmd->addr2 > BUFFER_SIZE ? BUFFER_SIZE : cmd->addr2) - 1));
-        }
-        Line *tmp = cmd->new;
-        unsigned index = cmd->addr1 - 1;
-        while (tmp) {
-            Insert(&BUFFER, index, tmp->text);
-            index++;
-            tmp = tmp->next;
-        }
-    } else { // DELETE
-        unsigned addr1 = cmd->addr1, addr2 = cmd->addr2, i, j;
+    if (cmd->type == CHANGE) {
 
-        if (addr1 <= BUFFER_SIZE) {
-            if (addr1 == 0) {
-                if (addr2 == 0) {
-                    i = 0;
-                    j = 0;
-                } else {
-                    i = 0;
-                    j = addr2 - 1;
-                }
-            } else {
-                if (addr2 <= BUFFER_SIZE) {
-                    i = addr1 - 1;
-                    j = addr2 - 1;
-                } else {
-                    i = addr1 - 1;
-                    j = BUFFER_SIZE - 1;
-                }
-            }
-            destroyTree(Delete(&BUFFER, i, j));
-        }
-    }*/
+    } else { // DELETE
+
+    }
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
