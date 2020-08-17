@@ -8,34 +8,36 @@
 
 #define MAX_INPUT_SIZE 1024
 
-typedef enum CmdType_ {
+typedef enum CmdType {
     CHANGE, DELETE
 } CmdType;
 
-typedef struct Line_ {
+typedef struct Line {
     char *text;
-    struct Line_ *next;
+    struct Line *prev, *next;
 } Line;
 
-typedef struct Cmd_ {
+typedef struct Range {
+	int size;
+	Line *start, *end;
+} Range;
+
+typedef struct Cmd {
     CmdType type;
-    int addr1;
-    int addr2;
-    Line *old;
-    Line *new;
-    struct Cmd_ *next;
+    int addr1, addr2;
+    Range *old, *new;
+    struct Cmd *next;
 } Cmd;
 
-typedef struct Node_ {
-    char *value;
-    struct Node_ *parent, *left, *right;
-    unsigned size;
-} Node;
+#define LINK(a, b) {\
+    a->next = b;\
+    b->prev = a;\
+    }
 
-typedef struct Tree_ {
-    Node *root;
-    unsigned size;
-} Tree;
+#define UNLINK(a, b) {\
+	a->next = NULL;\
+	b->prev = NULL;\
+	}
 
 // Counter for how many Undo/Redo remains to be applied
 int UR = 0;
@@ -49,11 +51,10 @@ int REDO_STACK_SIZE = 0;
 // Set it to true to terminate the program.
 bool SHOULD_QUIT = false;
 
-char INPUT_STRING[MAX_INPUT_SIZE];
+char INPUT_STRING_BUFFER[MAX_INPUT_SIZE];
 
-Tree *BUFFER = NULL;
-
-// PROTOTYPES
+Line *BUFFER = NULL;
+int BUFFER_SIZE = 0;
 
 // Read from stdin and handle commands.
 void parseInput();
@@ -76,8 +77,6 @@ Cmd *stack_pop(Cmd **stack, int *size) {
     return top;
 }
 
-char **inOrder(Tree *tree);
-
 // DEBUG
 void debug_printCmd(Cmd *cmd) {
     if (cmd == NULL) {
@@ -89,24 +88,18 @@ void debug_printCmd(Cmd *cmd) {
     printf("| Addr1: %d\n", cmd->addr1);
     printf("| Addr2: %d\n", cmd->addr2);
     printf("| Old: ");
-    Line *line = cmd->old;
-    while (line) {
-        printf("%s ", line->text);
-        line = line->next;
-    }
+
     printf("\n");
     printf("| New: ");
-    line = cmd->new;
-    while (line) {
-        printf("%s ", line->text);
-        line = line->next;
-    }
+
     printf("\n+---------\n");
 }
 
 void debug_printList(Line *l) {
-    Line *tmp = l;
-    while (tmp) {
+	Line *start = NULL;
+	Line *tmp = l;
+    while (tmp && tmp != start) {
+    	start = l;
         printf("%s ", tmp->text);
         tmp = tmp->next;
     }
@@ -114,79 +107,26 @@ void debug_printList(Line *l) {
 }
 
 int debug_countList(Line *l) {
+	Line *start = NULL;
     Line *tmp = l;
     int i = 0;
-    while (tmp) {
+    while (tmp && tmp != start) {
+    	start = l;
         i++;
         tmp = tmp->next;
     }
     return i;
 }
 
-void debug_printTree(Tree *tree) {
-    if (tree) {
-        printf("Tree size = %d : ", tree->size);
-        char **sstr = inOrder(tree);
-        for (unsigned xx = 0; xx < tree->size; xx++) {
-            printf("%s ", sstr[xx]);
-        }
-        printf("\n");
-        free(sstr);
-    } else printf("<null>\n");
-}
-
 char *createText(char *text);
 
 Line *createLine(char *text);
 
-Cmd *createCmd(CmdType type, int addr1, int addr2, Line *old, Line *new);
+Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new);
 
-static inline Node *createNode(char *value);
+void clearRedoStack();
 
-static inline Tree *createTree();
-
-void postOrderFree_r(Node *n);
-
-void destroyTree(Tree *tree);
-
-char **inOrder(Tree *tree);
-
-static void rotateRight(Tree *tree, Node *node);
-
-static void rotateLeft(Tree *tree, Node *node);
-
-void splay(Tree *tree, Node *node);
-
-static Node *subtreeMaximum(Tree *tree, Node *node);
-
-static Node *Index(Tree *tree, unsigned k);
-
-static Tree *Concat(Tree *tree1, Tree *tree2);
-
-static void Split(Tree *tree, unsigned rank, Tree **tree1, Tree **tree2);
-
-static Tree *Delete(Tree **tree, unsigned i, unsigned j);
-
-static void Insert(Tree **tree, unsigned rank, char *value);
-
-static void InsertMultiple(Tree **tree, unsigned i, unsigned j, Line *line);
-
-static Line *Report(Tree *tree, unsigned i, unsigned j);
-
-static inline Line *createListItem(Node *node);
-
-static inline void listPush(Line **l, Node *n);
-
-static void clearLineList(Line *l);
-
-static void clearRedoStack();
-
-// Tree Definitions
-
-static inline Tree *createTree();
-
-
-// Commands definitions
+Range *getInputLines(int quantity);
 
 void change(int addr1, int addr2);
 
@@ -204,39 +144,29 @@ void applyUndo();
 
 void applyRedo();
 
+void insert(const int index, const Range *list);
+
 int main() {
-    BUFFER = createTree();
+	Range *a = getInputLines(1);
+	Range *b = getInputLines(1);
+	Range *c = getInputLines(1);
+	Range *d = getInputLines(1);
 
-//    debug_printList(Report(BUFFER, 0, 4));
-//
-//    Insert(&BUFFER, 0, "A");
-//    Insert(&BUFFER, 1, "B");
-//
-//    printf("-----\n");
-//    debug_printList(Report(BUFFER, 0, 4));
-//    printf("-----\n");
-//
-//    Insert(&BUFFER, 2, "C");
-//    Insert(&BUFFER, 3, "D");
-//    Insert(&BUFFER, 4, "E");
-//    debug_printTree(BUFFER);
-//
-//    debug_printList(Report(BUFFER, 0, 4));
+	insert(1, a);
+	insert(1, b);
+	insert(2, c);
+	insert(1, d);
 
-    while (!SHOULD_QUIT) {
+	while (!SHOULD_QUIT) {
         // Each iteration is a command
         parseInput();
     }
 
-    destroyTree(BUFFER);
-
     return 0;
 }
 
-// Save a string with the minimum size possible.
+// Save a string with the minimum size possible. Strings are immutable.
 char *createText(char *text) {
-    // \n should be excluded from the string
-    assert(text[strlen(text) - 1] != '\n');
     char *allocatedStr = malloc(strlen(text) * sizeof(char) + 1);
     assert(allocatedStr != NULL);
     strcpy(allocatedStr, text);
@@ -247,13 +177,14 @@ char *createText(char *text) {
 Line *createLine(char *text) {
     Line *allocatedLine = malloc(sizeof(Line));
     assert(allocatedLine != NULL);
+    allocatedLine->prev = NULL;
     allocatedLine->next = NULL;
     allocatedLine->text = text;
     return allocatedLine;
 }
 
 // Create a new Command
-Cmd *createCmd(CmdType type, int addr1, int addr2, Line *old, Line *new) {
+Cmd *createCmd(CmdType type, int addr1, int addr2, Range *old, Range *new) {
     Cmd *allocatedCmd = malloc(sizeof(Cmd));
     assert(allocatedCmd != NULL);
     allocatedCmd->type = type;
@@ -277,7 +208,8 @@ void clearLineList(Line *l) {
 
 void clearRedoStack() {
     while(REDO_STACK) {
-        clearLineList(REDO_STACK->new);
+    	// TODO: Fix clearLineList
+        // clearLineList(REDO_STACK->new);
         Cmd *next = REDO_STACK->next;
         free(REDO_STACK);
         REDO_STACK = next;
@@ -287,335 +219,56 @@ void clearRedoStack() {
 }
 
 // DATA STRUCTURE
+void insert(const int index, const Range *list) {
+	assert(index >= 1 && index <= size + 1);
+	if (BUFFER == NULL) { // like, who cares about the index
+		assert(BUFFER_SIZE == 0);
+		BUFFER = list->start;
+		LINK(list->start, list->end)
+	} else {
+		if (index < BUFFER_SIZE / 2) {
+			// Insert from head
+			Line *tmp = BUFFER;
+			for (int i = 0; i < index-1; i++) {
+				tmp = tmp->next;
+				assert(tmp != NULL);
+			}
+			// Now tmp is where I want to add stuff
+			Line *prev = tmp->prev;
+			Line *next = tmp;
+			LINK(prev, list->start)
+			LINK(list->end, next)
+		} else {
+			// Insert from tail
+			Line *tmp = BUFFER->prev;
+			for (int i = 0; i < BUFFER_SIZE - index; i++) {
+				tmp = tmp->prev;
+			}
+			// Now tmp is where I want to add stuff
+			Line *next = tmp->next;
+			Line *prev = tmp;
+			LINK(prev, list->start)
+			LINK(list->end, next)
+		}
+	}
+	if (index == 1) BUFFER = list->start;
+	BUFFER_SIZE += list->size;
 
-static inline Node *createNode(char *value) {
-    Node *node = malloc(sizeof(Node));
-    node->value = value;
-    node->size = 1;
-    node->parent = NULL;
-    node->left = NULL;
-    node->right = NULL;
-    return node;
+	debug_printList(BUFFER);
 }
 
-static inline Tree *createTree() {
-    Tree *tree = malloc(sizeof(Tree));
-    tree->root = NULL;
-    tree->size = 0;
-    return tree;
-}
+Range *get(const int i, const int j) {
 
-void postOrderFree_r(Node *n) {
-    if (n == NULL) return;
-    postOrderFree_r(n->left);
-    postOrderFree_r(n->right);
-    free(n);
-    //free(n->value);
-}
-
-void destroyTree(Tree *tree) {
-    if (tree == NULL) return;
-    else if (tree->root == NULL) {
-        free(tree);
-        return;
-    }
-    postOrderFree_r(tree->root);
-    free(tree);
-}
-
-/* Iterative in-order traversal.
- * Takes a tree* as input, and returns a string (a pointer to char).
- * It's faster to return (copy) one pointer than the whole string.
- * It could print nodes directly as it traverses the tree (and return void),
- * but that would mean calling putchar() or printf("%c") a large number of times,
- * instead of "appending" to the array result. */
-char **inOrder(Tree *tree) {
-    Node *current = tree->root;
-
-    char **result = calloc(tree->size, sizeof(*result)); // Slower
-    assert(result != NULL);
-    // static char *result[S_MAX_LEN]; // Faster
-
-    unsigned i = 0;
-    if (current == NULL)
-        return result;
-    Node **stack = malloc(tree->size * sizeof(**stack));
-    size_t stackIndex = 0;
-
-    while (true) {
-        while (current) {
-            stack[stackIndex] = current;
-            stackIndex++;
-            current = current->left;
-        }
-        if (stackIndex) {
-            stackIndex--;
-            current = stack[stackIndex];
-            result[i] = current->value;
-            i++;
-            current = current->right;
-        } else
-            break;
-    }
-    free(stack);
-    return result;
-}
-
-// Pointer to a tree, and a pointer to its node object that we want to rotate right.
-static void rotateRight(Tree *tree, Node *node) {
-    Node *parent = node->parent;
-    Node *Y = node->left;
-
-    if (Y == NULL) return; // we can't rotate the node with nothing!
-
-    Node *B = Y->right;
-    Y->parent = parent;
-    if (parent) {
-        if (node == parent->left)                               // node is left child
-            parent->left = Y;
-        else                                                    // node is right child
-            parent->right = Y;
-    } else
-        tree->root = Y;
-
-    node->parent = Y;
-    Y->right = node;
-    if (B)
-        B->parent = node;
-    node->left = B;
-
-    node->size = (node->left ? node->left->size : 0) + (node->right ? node->right->size : 0) + 1;
-    Y->size = (Y->left ? Y->left->size : 0) + (Y->right ? Y->right->size : 0) + 1;
-}
-
-// Input: Pointer to a tree, and a pointer to its node object that we want to rotate left.
-static void rotateLeft(Tree *tree, Node *node) {
-    Node *parent = node->parent;
-    Node *X = node->right;
-    if (!X)
-        return; // we can't rotate the node with nothing!
-    Node *B = X->left;
-    X->parent = parent;
-    if (parent) {
-        if (node == parent->left) // node is left child
-            parent->left = X;
-        else // node is right child
-            parent->right = X;
-    } else
-        tree->root = X;
-
-    node->parent = X;
-    X->left = node;
-    if (B)
-        B->parent = node;
-    node->right = B;
-
-    node->size = (node->left ? node->left->size : 0) + (node->right ? node->right->size : 0) + 1;
-    X->size = (X->left ? X->left->size : 0) + (X->right ? X->right->size : 0) + 1;
-}
-
-// Splays node to the top of the tree, making it new root of the tree.
-// Input: Pointer to a tree, and a pointer to its node object that we want to splay to the root.
-void splay(Tree *tree, Node *node) {
-    if (node == NULL) return;
-
-    Node *parent = node->parent;
-
-    while (parent) {
-        Node *grandParent = parent->parent;
-
-        if (!grandParent) {
-            /* Zig */
-            if (node == parent->left)
-                rotateRight(tree, parent);
-            else
-                rotateLeft(tree, parent);
-        } else if (node == parent->left) {
-            if (parent == grandParent->left) {
-                /* Zig-zig */
-                rotateRight(tree, grandParent);
-                rotateRight(tree, parent);
-            } else {
-                /* Zig-zag - if (parent == grandParent->right) */
-                rotateRight(tree, parent);
-                rotateLeft(tree, grandParent);
-            }
-        } else if (node == parent->right) {
-            if (parent == grandParent->right) {
-                /* Zig-zig */
-                rotateLeft(tree, grandParent);
-                rotateLeft(tree, parent);
-            } else {
-                /* Zig-zag (parent == grandParent.left) */
-                rotateLeft(tree, parent);
-                rotateRight(tree, grandParent);
-            }
-        }
-
-        parent = node->parent;
-    }
-}
-
-
-// "public" METHODS
-
-/* Input: Integer number k - the rank of a node (0 <= k < size of the whole tree).
- * Output: The k-esim smallest element in the tree (a node object). Counting starts from 0.
- * This is a public method, which splays the found node to the top of the tree. */
-static Node *Index(Tree *tree, unsigned k) {
-    assert(tree != NULL);
-    // Return NULL if we're out of bounds to the right side
-    // tree->size should always be >=1 at this point
-    assert(tree->size >= 1);
-    if (k > tree->size-1) return NULL;
-
-    Node *node = tree->root;
-    while (node) {
-        Node *left = node->left;
-        Node *right = node->right;
-        unsigned s = left ? left->size : 0;
-        if (k == s)
-            break;
-        else if (k < s) {
-            if (left) {
-                node = left;
-                continue;
-            }
-            break;
-        } else {
-            if (right) {
-                k = k - s - 1;
-                node = right;
-                continue;
-            }
-            break;
-        }
-    }
-    splay(tree, node);
-    return node;
-}
-
-static Node *subtreeMaximum(Tree *tree, Node *node) {
-    if (!node)
-        return NULL;
-    while (node->right)
-        node = node->right;
-    splay(tree, node);
-    return node;
-}
-
-// Merges two trees, tree1 and tree2, using the last element (of highest rank)
-// in tree1 (left string) as the node for merging, into a new tree.
-static Tree *Concat(Tree *tree1, Tree *tree2) {
-    if (tree1 == NULL || tree1->root == NULL)
-        return tree2;
-    if (tree2 == NULL || tree2->root == NULL)
-        return tree1;
-    Node *root2 = tree2->root;
-    Node *root1 = subtreeMaximum(tree1, tree1->root);
-    root2->parent = root1;
-    root1->right = root2;
-    root1->size = (root1->left ? root1->left->size : 0) + (root1->right ? root1->right->size : 0) + 1;
-    tree1->size = root1->size;
-    // check if mem leaks
-    free(tree2);
-    return tree1;
-}
-
-// Splits the Tree into two trees at the rank-esim element from the left.
-// A B C D split at 1 is (A B) (C D).
-static void Split(Tree *tree, unsigned rank, Tree **tree1, Tree **tree2) {
-    Node *root1 = Index(tree, rank);
-    Node *root2 = root1->right;
-    root1->right = NULL;
-    root1->size = (root1->left ? root1->left->size : 0) + (root1->right ? root1->right->size : 0) + 1;
-    *tree1 = createTree();
-    (*tree1)->root = root1;
-    (*tree1)->size = root1->size;
-    *tree2 = createTree();
-    if (root2) {
-        root2->parent = NULL;
-        (*tree2)->root = root2;
-        (*tree2)->size = root2->size;
-    }
-}
-
-static Tree *Delete(Tree **tree, unsigned i, unsigned j) {
-    Tree *left = NULL, *middle = NULL, *right = NULL;
-    Split(*tree, j, &middle, &right);
-    if (i > 0)
-        Split(middle, i - 1, &left, &middle);
-
-    *tree = Concat(left, right);
-    return middle;
-}
-
-static void Insert(Tree **tree, unsigned rank, char *value) {
-    if (value == NULL) return;
-    Node *node = createNode(value);
-    Tree *node_tree = createTree();
-    node_tree->root = node;
-    node_tree->size = 1;
-    Tree *left = NULL, *right = *tree;
-    if (rank > 0)
-        Split(*tree, rank - 1, &left, &right);
-
-    *tree = Concat(Concat(left, node_tree), right);
-    // TODO: can save some space maybe, comment if things bug
-    // free(right);
-}
-
-static void InsertMultiple(Tree **tree, unsigned i, unsigned j, Line *line) {
-    Line *tmp = line;
-    for (unsigned index = i; index <= j; index++) {
-        assert(tmp != NULL);
-        Insert(tree, index, tmp->text);
-        tmp = tmp->next;
-    }
-}
-
-static inline Line *createListItem(Node *node) {
-    assert(node != NULL);
-    Line *l = malloc(sizeof(Line));
-    assert(l != NULL);
-    l->text = node->value;
-    l->next = NULL;
-    return l;
-}
-
-static inline void listPush(Line **l, Node *n) {
-    static Line *tail = NULL;
-    Line *newItem = createListItem(n);
-    if (*l != NULL) // List already exists
-        tail->next = newItem;
-    else // List doesn't exists
-        *l = newItem;
-    tail = newItem;
-}
-
-static Line *Report(Tree *tree, unsigned i, unsigned j) {
-    assert(i >= 0);
-    assert(i <= j);
-    Line *l = NULL;
-    if (tree->root == NULL) {
-        return NULL;
-    } else {
-        for (unsigned t = i; t <= j; t++) {
-            Node *n = Index(tree, t);
-            if (n != NULL) listPush(&l, n);
-        }
-        return l;
-    }
 }
 
 // INTRO CODE
 
 void parseInput() {
-    fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
-    char cmd = INPUT_STRING[strlen(INPUT_STRING) - 2];
-    INPUT_STRING[strlen(INPUT_STRING) - 2] = '\0';
+    fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
+    char cmd = INPUT_STRING_BUFFER[strlen(INPUT_STRING_BUFFER) - 2];
+	INPUT_STRING_BUFFER[strlen(INPUT_STRING_BUFFER) - 2] = '\0';
     if (cmd == 'u' || cmd == 'r') {
-        int times = atoi(INPUT_STRING);
+        int times = atoi(INPUT_STRING_BUFFER);
         assert(times >= 0);
         if (cmd == 'u') {
             undo(times);
@@ -623,7 +276,7 @@ void parseInput() {
             redo(times);
         }
     } else if (cmd == 'c' || cmd == 'd' || cmd == 'p') {
-        char *token1 = strtok(INPUT_STRING, ",");
+        char *token1 = strtok(INPUT_STRING_BUFFER, ",");
         char *token2 = strtok(NULL, ",");
         assert(token1 != NULL);
         assert(token2 != NULL);
@@ -642,51 +295,45 @@ void parseInput() {
     } else SHOULD_QUIT = true;
 }
 
-Line *getInputLines(int quantity) {
-
-    Line *list = NULL, *lastItem = NULL;
+Range *getInputLines(int quantity) {
+    Range *range = calloc(1, sizeof(Range));
+	range->size = quantity;
 
     for (int i = 0; i < quantity; i++) {
         // Get the new text line from stdin
-        fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
+        fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
         // Remove \n from the string
-        char *input = strtok(INPUT_STRING, "\n");
+        char *input = strtok(INPUT_STRING_BUFFER, "\n");
         assert(input != NULL);
         // Save the string in a Line
         Line *nLine = createLine(createText(input));
-
-        if (list == NULL)
-            list = nLine;
-        else
-            lastItem->next = nLine;
-        lastItem = nLine;
+		if (range->start == NULL) { // first item
+			range->start = nLine;
+			range->end = nLine;
+		} else { // second+ item, range->end is the prev item
+			LINK(range->end, nLine)
+			// Set last item as new item
+			range->end = nLine;
+		}
     }
     // Chomp the '.'
-    fgets(INPUT_STRING, MAX_INPUT_SIZE, stdin);
+    fgets(INPUT_STRING_BUFFER, MAX_INPUT_SIZE, stdin);
 
-    return list;
+	assert(range->start->prev == NULL);
+	assert(range->end->next == NULL);
+    return range;
 }
 
 void change(int addr1, int addr2) {
     applyUR();
     clearRedoStack();
 
-    Line *oldLines = Report(BUFFER, addr1 - 1, addr2 - 1);
-    Line *newLines = getInputLines(addr2 - addr1 + 1);
-
-    if (oldLines != NULL) {
-        destroyTree(Delete(&BUFFER,
-                           addr1 - 1,
-                           (addr2 > BUFFER->size ? BUFFER->size : addr2) - 1));
-    }
-
+    getInputLines(addr2-addr1+1);
 
     // Add Command to undo stack
-    Cmd *cmd = createCmd(CHANGE, addr1, addr2, oldLines, newLines);
+    Cmd *cmd = createCmd(CHANGE, addr1, addr2, NULL, NULL);
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 
-    // Substitute the old lines with the new ones
-    InsertMultiple(&BUFFER, addr1 - 1, addr2 - 1, newLines);
 }
 
 void delete(int addr1, int addr2) {
@@ -698,7 +345,7 @@ void delete(int addr1, int addr2) {
 
     unsigned i, j;
 
-    if (addr1 <= BUFFER->size) {
+    if (addr1 <= BUFFER_SIZE) {
         if (addr1 == 0) {
             if (addr2 == 0) {
                 i = 0;
@@ -708,16 +355,16 @@ void delete(int addr1, int addr2) {
                 j = addr2 - 1;
             }
         } else {
-            if (addr2 <= BUFFER->size) {
+            if (addr2 <= BUFFER_SIZE) {
                 i = addr1 - 1;
                 j = addr2 - 1;
             } else {
                 i = addr1 - 1;
-                j = BUFFER->size - 1;
+                j = BUFFER_SIZE - 1;
             }
         }
-        oldLines = Report(BUFFER, i, j);
-        destroyTree(Delete(&BUFFER, i, j));
+        //oldLines = Report(BUFFER, i, j);
+        //destroyTree(Delete(&BUFFER, i, j));
     } else {
         oldLines = NULL;
     }
@@ -742,10 +389,10 @@ void print(int addr1, int addr2) {
         i = 1;
         printf(".\n");
     }
-    if (i <= BUFFER->size) {
-        if (j > BUFFER->size) {
-            j = BUFFER->size;
-            dots = addr2 - BUFFER->size;
+    if (i <= BUFFER_SIZE) {
+        if (j > BUFFER_SIZE) {
+            j = BUFFER_SIZE;
+            dots = addr2 - BUFFER_SIZE;
         } else { // i and j exists
             dots = 0;
         }
@@ -753,14 +400,14 @@ void print(int addr1, int addr2) {
         dots = addr2 - addr1 + 1;
     }
 
-    Line *lines = Report(BUFFER, i-1, j-1); // dealloc?
+    /*Line *lines = Report(BUFFER, i-1, j-1); // dealloc?
     Line *tmp = lines;
     while (tmp) {
         printf("%s\n", tmp->text);
         Line *next = tmp->next;
         free(tmp);
         tmp = next;
-    }
+    }*/
     for (; dots > 0; dots--) {
         printf(".\n");
     }
@@ -798,10 +445,11 @@ void applyUR() {
 }
 
 void applyUndo() {
-//    assert(UR >= -UNDO_STACK_SIZE && UR < 0);
+	assert(UR >= -UNDO_STACK_SIZE && UR < 0);
+
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
     assert(cmd != NULL);
-    if (cmd->type == CHANGE) {
+    /*if (cmd->type == CHANGE) {
         // UNDO: Remove lines from addr1 to addr2
         //       and add at addr1 the old lines
         destroyTree(Delete(&BUFFER, cmd->addr1 - 1, cmd->addr2 - 1));
@@ -826,21 +474,21 @@ void applyUndo() {
                 tmp = tmp->next;
             }
         }
-    }
+    }*/
     stack_push(&REDO_STACK, &REDO_STACK_SIZE, cmd);
 }
 
 void applyRedo() {
-//    assert(UR > 0 && UR <= REDO_STACK_SIZE);
+	assert(UR > 0 && UR <= REDO_STACK_SIZE);
 
     Cmd *cmd = stack_pop(&REDO_STACK, &REDO_STACK_SIZE);
     assert(cmd != NULL);
-    if (cmd->type == CHANGE) {
+  /*  if (cmd->type == CHANGE) {
         assert(cmd->addr1 != 0);
         if (cmd->old != NULL) {
             destroyTree(Delete(&BUFFER,
                                cmd->addr1 - 1,
-                               (cmd->addr2 > BUFFER->size ? BUFFER->size : cmd->addr2) - 1));
+                               (cmd->addr2 > BUFFER_SIZE ? BUFFER_SIZE : cmd->addr2) - 1));
         }
         Line *tmp = cmd->new;
         unsigned index = cmd->addr1 - 1;
@@ -852,7 +500,7 @@ void applyRedo() {
     } else { // DELETE
         unsigned addr1 = cmd->addr1, addr2 = cmd->addr2, i, j;
 
-        if (addr1 <= BUFFER->size) {
+        if (addr1 <= BUFFER_SIZE) {
             if (addr1 == 0) {
                 if (addr2 == 0) {
                     i = 0;
@@ -862,16 +510,16 @@ void applyRedo() {
                     j = addr2 - 1;
                 }
             } else {
-                if (addr2 <= BUFFER->size) {
+                if (addr2 <= BUFFER_SIZE) {
                     i = addr1 - 1;
                     j = addr2 - 1;
                 } else {
                     i = addr1 - 1;
-                    j = BUFFER->size - 1;
+                    j = BUFFER_SIZE - 1;
                 }
             }
             destroyTree(Delete(&BUFFER, i, j));
         }
-    }
+    }*/
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
