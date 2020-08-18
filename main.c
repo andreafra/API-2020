@@ -261,7 +261,7 @@ void clearLineList(Line **l) {
 void clearRedoStack() {
     while(REDO_STACK) {
     	// TODO: Fix clearLineList
-        // clearLineList(REDO_STACK->new);
+//        clearLineList(&REDO_STACK->new->start);
         Cmd *next = REDO_STACK->next;
         free(REDO_STACK);
         REDO_STACK = next;
@@ -599,9 +599,48 @@ void applyUndo() {
     Cmd *cmd = stack_pop(&UNDO_STACK, &UNDO_STACK_SIZE);
     assert(cmd != NULL);
     if (cmd->type == CHANGE) {
-    
+        assert(cmd->new != NULL);
+        if (cmd->start_neighbour == NULL && cmd->end_neighbour == NULL) {
+            // I must replace at BUFFER
+            // This case is when there's only one element in the BUFFER
+            if (cmd->old) { // It wasn't the first command
+                BUFFER = cmd->old->start;
+                LINK(cmd->old->end, cmd->old->start)
+                BUFFER_SIZE = cmd->old->size;
+            } else { // It was the first command
+                BUFFER = NULL;
+                BUFFER_SIZE -= cmd->new->size;
+                assert(BUFFER_SIZE == 0);
+            }
+            UNLINK_PAIR(cmd->new)
+        } else { // I'm replacing normal lines
+            assert(cmd->old != NULL);
+            LINK(cmd->start_neighbour, cmd->old->start)
+            LINK(cmd->old->end, cmd->end_neighbour);
+            UNLINK_PAIR(cmd->new);
+            // It either remains at the same size, or it shrinks
+            BUFFER_SIZE -= cmd->new->size - cmd->old->size;
+            // Update buffer if I've changed the previous buffer
+            if (cmd->addr1 <= 1) BUFFER = cmd->old->start;
+        }
     } else { // DELETE
-
+        assert(cmd->new == NULL);
+        if (cmd->old != NULL) { // else skip if I didn't delete anything
+            if (cmd->start_neighbour == NULL && cmd->end_neighbour == NULL) {
+                // I must insert at BUFFER
+                // This case is when there's 0 or 1 elements in the BUFFER
+                BUFFER = cmd->old->start;
+                LINK(cmd->old->end, cmd->old->start);
+                BUFFER_SIZE += cmd->old->size;
+            } else {
+                LINK(cmd->start_neighbour, cmd->old->start)
+                LINK(cmd->old->end, cmd->end_neighbour)
+                // Nothing to UNLINK (cmd->new == NULL)
+                BUFFER_SIZE += cmd->old->size;
+                // Update buffer if I've deleted the previous buffer
+                if (cmd->addr1 <= 1) BUFFER = cmd->old->start;
+            }
+        }
     }
     stack_push(&REDO_STACK, &REDO_STACK_SIZE, cmd);
 }
@@ -612,9 +651,48 @@ void applyRedo() {
     Cmd *cmd = stack_pop(&REDO_STACK, &REDO_STACK_SIZE);
     assert(cmd != NULL);
     if (cmd->type == CHANGE) {
-
+        if (cmd->start_neighbour == NULL && cmd->end_neighbour == NULL) {
+            // I must replace at BUFFER
+            // This case is when there's only 0 or 1 elements in the BUFFER
+            BUFFER = cmd->new->start;
+            LINK(cmd->new->end, cmd->new->start);
+            if (cmd->old != NULL) { // there was at least one element
+                UNLINK_PAIR(cmd->old);
+                BUFFER_SIZE += cmd->new->size - cmd->old->size;
+            } else {
+                BUFFER_SIZE = cmd->new->size; // it was 0 elements
+            }
+        } else { // I'm replacing normal lines
+            assert(cmd->new != NULL);
+            LINK(cmd->start_neighbour, cmd->new->start)
+            LINK(cmd->new->end, cmd->end_neighbour)
+            if (cmd->old != NULL) {
+                UNLINK_PAIR(cmd->old)
+                BUFFER_SIZE += cmd->new->size - cmd->old->size; // it was 0 elements
+            } else {
+                BUFFER_SIZE = cmd->new->size;
+            }
+            // Update buffer if I've changed the previous buffer
+            if (cmd->addr1 <= 1) BUFFER = cmd->new->start;
+        }
     } else { // DELETE
-
+        assert(cmd->new == NULL);
+        if (cmd->start_neighbour == NULL && cmd->end_neighbour == NULL) {
+            // I have deleted a NULL buffer, everything or just the first element
+            BUFFER = NULL;
+            if (cmd->old) { // If I actually "delete" stuff
+                UNLINK_PAIR(cmd->old);
+                BUFFER_SIZE -= cmd->old->size;
+                assert(BUFFER_SIZE == 0);
+            }
+        } else {
+            LINK(cmd->start_neighbour, cmd->end_neighbour);
+            // Possible segfault?
+            UNLINK_PAIR(cmd->old);
+            BUFFER_SIZE -= cmd->old->size;
+            // Update buffer if I've changed the previous buffer
+            if (cmd->addr1 <= 1) BUFFER = cmd->end_neighbour;
+        }
     }
     stack_push(&UNDO_STACK, &UNDO_STACK_SIZE, cmd);
 }
