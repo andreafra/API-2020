@@ -260,8 +260,16 @@ void clearLineList(Line **l) {
 
 void clearRedoStack() {
     while(REDO_STACK) {
-    	// TODO: Fix clearLineList
-//        clearLineList(&REDO_STACK->new->start);
+        if (REDO_STACK->new) {
+            Line *tmp = REDO_STACK->new->start;
+            for (int i = 0; i < REDO_STACK->new->size; i++) {
+                free(tmp->text);
+                Line *nextLine = tmp->next;
+                free(tmp);
+                tmp = nextLine;
+            }
+        }
+
         Cmd *next = REDO_STACK->next;
         free(REDO_STACK);
         REDO_STACK = next;
@@ -479,8 +487,8 @@ Range *getInputLines(int quantity) {
 
 void change(int addr1, int addr2) {
     assert(0 <= addr1 && addr1 <= addr2);
-    //applyUR();
-    //clearRedoStack();
+    applyUR();
+    clearRedoStack();
 
     Line *prev = NULL, *next = NULL;
 
